@@ -193,7 +193,10 @@
                 { name: 'evilchloebackside', src: 'sprites/chloe/player/evilChloeBackside.png' },
                 { name: 'evilchloefrontside', src: 'sprites/chloe/player/evilChloeFrontside.png' },
                 { name: 'rlglscreen', src: 'sprites/chloe/player/rlglscreen.png' },
-                { name: 'honeycomb', src: 'sprites/chloe/player/honeycomb.png' }
+                { name: 'honeycomb', src: 'sprites/chloe/player/honeycomb.png' },
+                { name: 'tilesbackground', src: 'sprites/chloe/player/tilesbackground.png' },
+                { name: 'tile', src: 'sprites/chloe/player/tile.png' },
+                { name: 'tilelight', src: 'sprites/chloe/player/tilelight.png' }
             ];
 
             let loadedCount = 0;
@@ -397,19 +400,19 @@
 
         function setupGlassBridge() {
             gameTimer = 67;
-            gameState.bridgePosition = { row: 0, col: 0 };
+            gameState.bridgePosition = { tile: -1 }; // Start below tiles, -1 means at starting position
             gameState.onBridge = false;
             gameState.selectedTile = null; // Track which tile is selected
             
-            // Generate safe tiles (randomize which tile in each row is safe)
+            // Generate safe tiles - 6 tiles total, randomize which ones are safe
             gameState.safeTiles = [];
-            for (let i = 0; i < 7; i++) {
-                gameState.safeTiles[i] = Math.random() < 0.5 ? 0 : 1; // 0 = left safe, 1 = right safe
+            for (let i = 0; i < 6; i++) {
+                gameState.safeTiles[i] = Math.random() < 0.5; // true = safe, false = unsafe
             }
             
             startGameTimer();
             
-            document.getElementById('instructions').innerHTML = '🖱️ CLICK tile to select &nbsp;•&nbsp; SPACE to jump &nbsp;•&nbsp; Watch for subtle shimmer!';
+            document.getElementById('instructions').innerHTML = '🖱️ CLICK tile to select &nbsp;•&nbsp; SPACE to jump &nbsp;•&nbsp; Move upward across the tiles!';
         }
 
         function setupGameOver() {
@@ -516,62 +519,14 @@
         }
 
         function renderMainMenu() {
-            // Background - use startscreen.png
+            // Clean startscreen - just the PNG image
             if (assets.startscreen && assets.startscreen.complete) {
                 ctx.drawImage(assets.startscreen, 0, 0, canvas.width, canvas.height);
             } else {
-                // Fallback dark background
+                // Fallback dark background if image doesn't load
                 ctx.fillStyle = '#000';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
-            
-            // Flickering light effects
-            gameState.flickerTime += 0.02;
-            const flicker1 = Math.sin(gameState.flickerTime * 15) * 0.5 + 0.5;
-            const flicker2 = Math.sin(gameState.flickerTime * 23) * 0.3 + 0.7;
-            const flicker3 = Math.sin(gameState.flickerTime * 31) * 0.4 + 0.6;
-            
-            // Subtle flickering overlay
-            ctx.fillStyle = `rgba(255, 255, 255, ${flicker1 * 0.05})`;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Flickering light sources (simulated electrical issues)
-            ctx.fillStyle = `rgba(255, 200, 100, ${flicker2 * 0.1})`;
-            ctx.beginPath();
-            ctx.arc(200, 100, 80, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.fillStyle = `rgba(255, 200, 100, ${flicker3 * 0.08})`;
-            ctx.beginPath();
-            ctx.arc(canvas.width - 200, 150, 60, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Horror-style title with flickering
-            const titleFlicker = Math.sin(gameState.flickerTime * 8) * 0.2 + 0.8;
-            ctx.font = 'bold 72px Orbitron';
-            ctx.fillStyle = `rgba(255, 0, 0, ${titleFlicker})`;
-            ctx.textAlign = 'center';
-            ctx.shadowBlur = 25;
-            ctx.shadowColor = '#ff0000';
-            ctx.fillText('ALPHA GAMES', canvas.width / 2, 450);
-            ctx.shadowBlur = 0;
-            
-            // Flickering START text
-            const startFlicker = Math.sin(gameState.flickerTime * 12) * 0.15 + 0.85;
-            ctx.font = 'bold 32px Orbitron';
-            ctx.fillStyle = `rgba(255, 255, 255, ${startFlicker})`;
-            ctx.strokeStyle = `rgba(255, 0, 0, ${startFlicker})`;
-            ctx.lineWidth = 2;
-            
-            // START button
-            const startY = 550;
-            ctx.strokeRect(canvas.width / 2 - 100, startY, 200, 60);
-            ctx.fillText('PRESS ENTER TO START', canvas.width / 2, startY + 40);
-            
-            // Subtle horror text
-            ctx.font = 'bold 16px Orbitron';
-            ctx.fillStyle = `rgba(150, 150, 150, ${flicker1 * 0.7})`;
-            ctx.fillText('Something is wrong here...', canvas.width / 2, canvas.height - 50);
         }
 
         function renderIntro() {
@@ -945,79 +900,83 @@
         }
 
         function renderGlassBridge() {
-            // Background
-            ctx.fillStyle = '#2a2a2a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // Background - use tilesbackground.png
+            if (assets.tilesbackground && assets.tilesbackground.complete) {
+                ctx.drawImage(assets.tilesbackground, 0, 0, canvas.width, canvas.height);
+            } else {
+                // Fallback background
+                ctx.fillStyle = '#1a1a2e';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
             
-            // Alpha banners
-            ctx.fillStyle = '#ff0000';
-            ctx.font = 'bold 48px Orbitron';
-            ctx.textAlign = 'center';
-            ctx.fillText('ALPHA', canvas.width / 2, 80);
+            // 6 tiles arranged horizontally across the screen
+            const tileWidth = 100;
+            const tileHeight = 80;
+            const totalWidth = 6 * tileWidth;
+            const startX = (canvas.width - totalWidth) / 2;
+            const tileY = canvas.height / 2 - 40; // Middle of screen
             
-            // Bridge tiles - positioned higher to avoid instruction overlap
-            const tileWidth = 80;
-            const tileHeight = 60;
-            const startX = canvas.width / 2 - tileWidth;
-            const startY = 180;
+            // Check if tiles should flash (every 6 seconds)
+            const time = Date.now() / 6000; // 6-second cycle
+            const flashIntensity = Math.sin(time * Math.PI * 2);
+            const shouldFlash = flashIntensity > 0.7; // Flash when sine wave is high
             
-                            for (let row = 0; row < 7; row++) {
-                for (let col = 0; col < 2; col++) {
-                    const x = startX + col * tileWidth;
-                    const y = startY + row * 100;
-                    
-                    // Base tile color
-                    ctx.fillStyle = '#777';
+            // Render 6 glass tiles
+            for (let i = 0; i < 6; i++) {
+                const x = startX + i * tileWidth;
+                const y = tileY;
+                
+                // Use tile.png normally, tilelight.png when flashing
+                const tileImage = shouldFlash ? assets.tilelight : assets.tile;
+                
+                if (tileImage && tileImage.complete) {
+                    ctx.drawImage(tileImage, x, y, tileWidth, tileHeight);
+                } else {
+                    // Fallback tile rendering
+                    ctx.fillStyle = shouldFlash ? '#88ccff' : '#4a90e2';
                     ctx.fillRect(x, y, tileWidth, tileHeight);
-                    
-                    // Tile color based on safety (with very subtle reflection hint)
-                    const isSafe = gameState.safeTiles[row] === col;
-                    const time = Date.now() / 12000; // Much slower 12 second cycle
-                    const reflectionIntensity = Math.sin(time) * 0.5 + 0.5; // Smooth sine wave 0-1
-                    
-                    if (isSafe && reflectionIntensity > 0.8) { // Only show hint at very peak
-                        const opacity = (reflectionIntensity - 0.8) * 5; // Much more subtle
-                        
-                        // Very subtle shine effect
-                        ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.15})`;
-                        ctx.fillRect(x, y, tileWidth, tileHeight);
-                    }
-                    
-                    // Tile selection highlight
-                    if (gameState.selectedTile && gameState.selectedTile.row === row && gameState.selectedTile.col === col) {
-                        ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
-                        ctx.fillRect(x, y, tileWidth, tileHeight);
-                        
-                        ctx.strokeStyle = '#ffff00';
-                        ctx.lineWidth = 3;
-                        ctx.strokeRect(x + 2, y + 2, tileWidth - 4, tileHeight - 4);
-                    }
-                    
-                    // Tile border
                     ctx.strokeStyle = '#333';
                     ctx.lineWidth = 2;
                     ctx.strokeRect(x, y, tileWidth, tileHeight);
                 }
+                
+                // Tile selection highlight
+                if (gameState.selectedTile === i) {
+                    ctx.fillStyle = 'rgba(255, 255, 0, 0.4)';
+                    ctx.fillRect(x, y, tileWidth, tileHeight);
+                    
+                    ctx.strokeStyle = '#ffff00';
+                    ctx.lineWidth = 4;
+                    ctx.strokeRect(x + 2, y + 2, tileWidth - 4, tileHeight - 4);
+                }
             }
             
-            // Player position on bridge
-            if (gameState.onBridge) {
-                const playerX = startX + gameState.bridgePosition.col * tileWidth + tileWidth/2;
-                const playerY = startY + gameState.bridgePosition.row * 100 + tileHeight/2;
+            // Player position
+            if (gameState.bridgePosition.tile >= 0) {
+                // Player is on a tile
+                const playerX = startX + gameState.bridgePosition.tile * tileWidth + tileWidth/2;
+                const playerY = tileY + tileHeight/2;
                 
-                ctx.fillStyle = '#ff0000';
-                ctx.beginPath();
-                ctx.arc(playerX, playerY, 15, 0, Math.PI * 2);
-                ctx.fill();
+                if (assets.player && assets.player.complete) {
+                    ctx.drawImage(assets.player, playerX - 30, playerY - 40, 60, 80);
+                } else {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.beginPath();
+                    ctx.arc(playerX, playerY, 20, 0, Math.PI * 2);
+                    ctx.fill();
+                }
                 
                 ctx.font = 'bold 16px Orbitron';
                 ctx.fillStyle = '#fff';
                 ctx.textAlign = 'center';
-                ctx.fillText('67', playerX, playerY + 5);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.strokeText('67', playerX, playerY - 50);
+                ctx.fillText('67', playerX, playerY - 50);
             } else {
-                // Player at start - positioned better with player sprite
-                const playerStartX = startX + tileWidth/2;
-                const playerStartY = startY - 60;
+                // Player at starting position (bottom of screen)
+                const playerStartX = canvas.width / 2;
+                const playerStartY = canvas.height - 100;
                 
                 if (assets.player && assets.player.complete) {
                     ctx.drawImage(assets.player, playerStartX - 30, playerStartY, 60, 80);
@@ -1035,36 +994,27 @@
                 ctx.fillText('67', playerStartX, playerStartY - 10);
             }
             
-            ctx.font = 'bold 32px Orbitron';
+            // Instructions
+            ctx.font = 'bold 24px Orbitron';
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
-            ctx.fillText('CROSS', canvas.width / 2, 130);
-            ctx.font = 'bold 18px Orbitron';
-            ctx.fillText('Some will say yes, some will say no. High stakes Rejection Therapy.', canvas.width / 2, 155);
+            ctx.fillText('GLASS BRIDGE', canvas.width / 2, 50);
             
-            // Show current row progress and instructions
-            if (gameState.onBridge) {
+            // Show progress and instructions
+            if (gameState.bridgePosition.tile >= 0) {
                 ctx.font = 'bold 16px Orbitron';
-                ctx.fillStyle = '#ffff00';
-                ctx.fillText(`Row ${gameState.bridgePosition.row + 1} of 7`, canvas.width / 2, canvas.height - 70);
+                ctx.fillStyle = '#fff';
+                ctx.fillText(`Tile ${gameState.bridgePosition.tile + 1} of 6`, canvas.width / 2, canvas.height - 80);
                 
-                if (gameState.selectedTile) {
-                    ctx.fillStyle = '#00ff00';
-                    ctx.fillText(`Selected: ${gameState.selectedTile.col === 0 ? 'LEFT' : 'RIGHT'} tile - Press SPACE to jump!`, 
-                        canvas.width / 2, canvas.height - 50);
+                if (gameState.selectedTile !== null) {
+                    ctx.fillText(`Selected: Tile ${gameState.selectedTile + 1} (Press SPACE to jump)`, canvas.width / 2, canvas.height - 50);
                 } else {
-                    ctx.fillStyle = '#fff';
-                    ctx.fillText('Click on a tile in the NEXT row to select it', canvas.width / 2, canvas.height - 50);
+                    ctx.fillText('Click on a tile to select your path', canvas.width / 2, canvas.height - 50);
                 }
             } else {
                 ctx.font = 'bold 16px Orbitron';
-                ctx.fillStyle = '#fff';
-                if (gameState.selectedTile) {
-                    ctx.fillText(`Selected: ${gameState.selectedTile.col === 0 ? 'LEFT' : 'RIGHT'} tile - Press SPACE to start!`, 
-                        canvas.width / 2, canvas.height - 50);
-                } else {
-                    ctx.fillText('Click on a tile in the FIRST row to begin', canvas.width / 2, canvas.height - 50);
-                }
+                ctx.fillStyle = '#ffaa00';
+                ctx.fillText('Click on a tile to begin your crossing!', canvas.width / 2, canvas.height - 50);
             }
         }
 
@@ -1260,49 +1210,37 @@
         }
 
         function handleBridgeMovement(key) {
-            if (!gameState.onBridge) {
-                if (key === ' ' && gameState.selectedTile) {
-                    // Step onto selected tile
-                    gameState.onBridge = true;
-                    gameState.bridgePosition = { 
-                        row: gameState.selectedTile.row, 
-                        col: gameState.selectedTile.col 
-                    };
+            if (key === ' ' && gameState.selectedTile !== null) {
+                if (gameState.bridgePosition.tile < 0) {
+                    // First jump - from starting position to selected tile
+                    gameState.bridgePosition.tile = gameState.selectedTile;
                     gameState.selectedTile = null; // Clear selection
                     checkTileBreak();
-                }
-                    return;
-                }
-
-            // On bridge - can only jump forward with space
-            if (key === ' ' && gameState.selectedTile) {
-                const currentRow = gameState.bridgePosition.row;
-                const targetRow = gameState.selectedTile.row;
-                const targetCol = gameState.selectedTile.col;
-                
-                // Can only move to next row
-                if (targetRow === currentRow + 1) {
-                    gameState.bridgePosition = { row: targetRow, col: targetCol };
-                    gameState.selectedTile = null; // Clear selection
-                    
-                    if (targetRow >= 6) {
-                        // Reached the end!
-                        clearInterval(gameState.timerInterval);
-                        setTimeout(() => winGame(), 1000);
-                    } else {
-                        checkTileBreak();
+                } else {
+                    // Move to next tile - can only move upward (to lower-indexed tiles)
+                    if (gameState.selectedTile < gameState.bridgePosition.tile) {
+                        gameState.bridgePosition.tile = gameState.selectedTile;
+                        gameState.selectedTile = null; // Clear selection
+                        
+                        if (gameState.bridgePosition.tile === 0) {
+                            // Reached the end (tile 0 is the top)!
+                            clearInterval(gameState.timerInterval);
+                            setTimeout(() => winGame(), 1000);
+                        } else {
+                            checkTileBreak();
+                        }
                     }
                 }
             }
         }
 
         function checkTileBreak() {
-            const { row, col } = gameState.bridgePosition;
-            const isSafe = gameState.safeTiles[row] === col;
+            const tileIndex = gameState.bridgePosition.tile;
+            const isSafe = gameState.safeTiles[tileIndex];
             
             if (!isSafe) {
                 playGlassBreak();
-                gameOver('Tile broke.');
+                gameOver('Glass tile shattered!');
             }
         }
 
@@ -1344,33 +1282,24 @@
                 const clickX = e.clientX - rect.left;
                 const clickY = e.clientY - rect.top;
                 
-                // Check if clicking on a tile
-                const tileWidth = 80;
-                const tileHeight = 60;
-                const startX = canvas.width / 2 - tileWidth;
-                const startY = 180;
+                // Check if clicking on a tile - 6 tiles horizontally
+                const tileWidth = 100;
+                const tileHeight = 80;
+                const totalWidth = 6 * tileWidth;
+                const startX = (canvas.width - totalWidth) / 2;
+                const tileY = canvas.height / 2 - 40;
                 
-                for (let row = 0; row < 7; row++) {
-                    for (let col = 0; col < 2; col++) {
-                        const tileX = startX + col * tileWidth;
-                        const tileY = startY + row * 100;
+                for (let i = 0; i < 6; i++) {
+                    const tileX = startX + i * tileWidth;
+                    
+                    // Check if click is within this tile
+                    if (clickX >= tileX && clickX <= tileX + tileWidth &&
+                        clickY >= tileY && clickY <= tileY + tileHeight) {
                         
-                        // Check if click is within this tile
-                        if (clickX >= tileX && clickX <= tileX + tileWidth &&
-                            clickY >= tileY && clickY <= tileY + tileHeight) {
-                            
-                            // Can only select tiles in current row or next row
-                            if (!gameState.onBridge && row === 0) {
-                                // Starting - can select first row
-                                gameState.selectedTile = { row, col };
-                                playMenuBeep();
-                            } else if (gameState.onBridge && row === gameState.bridgePosition.row + 1) {
-                                // On bridge - can select next row only
-                                gameState.selectedTile = { row, col };
-                                playMenuBeep();
-                            }
-                    return;
-                        }
+                        // Always allow tile selection
+                        gameState.selectedTile = i;
+                        playMenuBeep();
+                        return;
                     }
                 }
             }
