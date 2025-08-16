@@ -25,9 +25,11 @@
         }
 
         #gameCanvas {
-            border: 2px solid #ff0000;
             background: #000;
             cursor: crosshair;
+            width: 100vw;
+            height: 100vh;
+            display: block;
         }
 
         .ui-overlay {
@@ -80,10 +82,10 @@
             font-size: 1rem;
             text-align: center;
             opacity: 0.9;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px 20px;
-            border-radius: 5px;
-            border: 1px solid #ff0000;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 12px 24px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
         }
 
         .death-flash {
@@ -101,7 +103,7 @@
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="1200" height="800"></canvas>
+    <canvas id="gameCanvas"></canvas>
     
     <!-- UI Overlays -->
     <div class="ui-overlay">
@@ -118,11 +120,101 @@
         const ctx = canvas.getContext('2d');
         let audioContext;
 
+        // Make canvas full screen
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        
+        // Initial resize and add event listener
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
         // Initialize audio context on first user interaction
         function initAudioContext() {
             if (!audioContext) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
+        }
+
+        // Background music system with scene-specific tracks
+        let musicTracks = {};
+        let currentMusic = null;
+        let musicEnabled = true;
+
+        function loadBackgroundMusic() {
+            console.log('🎵 Loading scene-specific background music...');
+            
+            // Load different tracks for different scenes
+            const tracks = [
+                { scene: 'honeycomb', file: 'audio/chris.mp3', name: 'Chris Theme' },
+                { scene: 'glassBridge', file: 'audio/finalsong.mp3', name: 'Final Song' },
+                { scene: 'redLightGreenLight', file: 'audio/background-music.mp3', name: 'Red Light Green Light Theme' },
+                { scene: 'main', file: 'audio/background-music.mp3', name: 'Main Theme' }
+            ];
+            
+            tracks.forEach(track => {
+                const audio = new Audio();
+                if (audio.canPlayType('audio/mpeg')) {
+                    audio.src = track.file;
+                    audio.loop = true;
+                    audio.volume = 0.4; // Slightly higher for scene-specific music
+                    
+                    // Handle successful loading
+                    audio.addEventListener('canplaythrough', () => {
+                        console.log(`✅ ${track.name} loaded successfully`);
+                    });
+                    
+                    // Handle loading errors gracefully
+                    audio.addEventListener('error', (e) => {
+                        console.log(`❌ ${track.name} failed to load from ${track.file}`);
+                    });
+                    
+                    musicTracks[track.scene] = audio;
+                }
+            });
+        }
+
+        function playSceneMusic(sceneName) {
+            console.log(`🎵 playSceneMusic called for: ${sceneName}`);
+            if (!musicEnabled) return;
+            
+            // Stop current music completely
+            if (currentMusic) {
+                currentMusic.pause();
+                currentMusic.currentTime = 0;
+                currentMusic = null; // Clear the reference!
+                console.log('🎵 Stopped previous music');
+            }
+            
+            // Play scene-specific music
+            const track = musicTracks[sceneName] || musicTracks['main'];
+            console.log(`🎵 Track found for ${sceneName}:`, track ? 'YES' : 'NO');
+            if (track && track.readyState >= 2) {
+                currentMusic = track;
+                track.play().catch(err => {
+                    console.log(`🎵 Music autoplay prevented for ${sceneName}:`, err);
+                });
+                console.log(`🎵 Now playing: ${sceneName} theme`);
+            } else if (track) {
+                console.log(`🎵 Track not ready yet for ${sceneName}, readyState:`, track.readyState);
+            }
+        }
+
+        function stopBackgroundMusic() {
+            console.log('🎵 stopBackgroundMusic called');
+            if (currentMusic) {
+                console.log('🎵 Stopping music:', currentMusic.src);
+                currentMusic.pause();
+                currentMusic.currentTime = 0;
+                currentMusic = null;
+                console.log('🎵 Music stopped and cleared');
+            }
+        }
+
+        // Legacy function for compatibility
+        function playBackgroundMusic() {
+            playSceneMusic('main');
         }
 
         // Game State
@@ -196,7 +288,9 @@
                 { name: 'honeycomb', src: 'sprites/chloe/player/honeycomb.png' },
                 { name: 'tilesbackground', src: 'sprites/chloe/player/tilesbackground.png' },
                 { name: 'tile', src: 'sprites/chloe/player/tile.png' },
-                { name: 'tilelight', src: 'sprites/chloe/player/tilelight.png' }
+                { name: 'tilelight', src: 'sprites/chloe/player/tilelight.png' },
+                { name: 'money', src: 'sprites/chloe/player/money.png' },
+                { name: 'finalscreen', src: 'sprites/chloe/player/finalscreen.png' }
             ];
 
             let loadedCount = 0;
@@ -226,6 +320,9 @@
             currentScene = sceneName;
             gameState.keys = {};
             
+            // Stop current music before switching scenes
+            stopBackgroundMusic();
+            
             // Clear UI
             document.getElementById('timerDisplay').textContent = '';
             document.getElementById('gameStatus').textContent = '';
@@ -234,6 +331,10 @@
             // Clear intervals
             if (gameState.timerInterval) clearInterval(gameState.timerInterval);
             if (gameState.lightInterval) clearInterval(gameState.lightInterval);
+            
+            // Clear Red Light Green Light specific state
+            gameState.isGreenLight = false;
+            gameState.isMoving = false;
             
             // Scene-specific setup
             switch(sceneName) {
@@ -257,6 +358,9 @@
                     break;
                 case 'win':
                     setupWin();
+                    break;
+                case 'finalscreen':
+                    setupFinalScreen();
                     break;
             }
         }
@@ -283,6 +387,11 @@
                 }, 1000);
                 gameState.horrorAudioPlayed = true;
             }
+            
+            // Start main theme music on main menu
+            setTimeout(() => {
+                playSceneMusic('main');
+            }, 1500);
         }
 
         function setupIntro() {
@@ -302,6 +411,9 @@
                 "Press any key to begin"
             ];
             gameState.visibleLines = [];
+            
+            // Continue main theme during intro
+            playSceneMusic('main');
             
             setTimeout(() => {
                 const countInterval = setInterval(() => {
@@ -354,7 +466,7 @@
         }
 
         function setupRedLightGreenLight() {
-            gameTimer = 67;
+            gameTimer = 77; // Added 10 seconds to make it easier
             // Start at left side of classroom
             gameState.playerPosition = { x: 80, y: canvas.height / 2, scale: 1.0 };
             gameState.isGreenLight = true;
@@ -376,47 +488,94 @@
             startGameTimer();
             startLightCycle();
             
-            document.getElementById('instructions').textContent = 'Cross the classroom to reach Chloe. Move RIGHT toward her. FREEZE on RED!';
+            // Play background music for Red Light Green Light scene
+            playSceneMusic('redLightGreenLight');
+            
+            document.getElementById('instructions').textContent = 'Cross the classroom to reach Chloe. Move RIGHT toward her. FREEZE on RED! [+10 BONUS seconds]';
         }
 
         function setupHoneycomb() {
+            // NUCLEAR cleanup of ALL previous game state
+            if (gameState.timerInterval) {
+                clearInterval(gameState.timerInterval);
+                gameState.timerInterval = null;
+            }
+            if (gameState.lightInterval) {
+                clearInterval(gameState.lightInterval);
+                gameState.lightInterval = null;
+            }
+            
+            // Stop any current music immediately and wait
+            stopBackgroundMusic();
+            
+            // COMPLETE reset of ALL Red Light Green Light state
+            gameState.isGreenLight = false;
+            gameState.isMoving = false;
+            gameState.playerPosition = null;
+            gameState.otherPlayers = [];
+            
+            // Clear ALL UI elements to prevent bleed
+            document.getElementById('timerDisplay').textContent = '';
+            document.getElementById('gameStatus').textContent = '';
+            
+            // Initialize CLEAN Honeycomb game state
             gameTimer = 67;
             gameState.honeycombProgress = [];
             gameState.honeycombComplete = false;
             gameState.tracingActive = false;
             gameState.tracingStarted = false;
+            gameState.isDragging = false; // New drag state
             
-            // Circle parameters for cookie outline
+            // Circle tracing around honeycomb cookie
             gameState.cookieCenter = { x: canvas.width / 2, y: canvas.height / 2 };
-            gameState.cookieRadius = 120; // Radius of the cookie circle
+            gameState.cookieRadius = 120; // Radius of the circle to trace
             gameState.traceProgress = 0; // How much of the circle has been traced (0-1)
-            gameState.lastAngle = null; // Last traced angle
-            gameState.completedAngles = new Set(); // Track which angles have been traced
+            gameState.completedAngles = []; // Track which angles have been traced
             
             startGameTimer();
             
-            document.getElementById('instructions').textContent = 'Trace the EXACT edge of the cookie circle. Any deviation = CRACK!';
+            // Longer delay to ensure complete scene transition
+            setTimeout(() => {
+                if (currentScene === 'honeycomb') { // Double-check we're still in honeycomb
+                    console.log('🎵 Starting Chris music for Honeycomb scene...');
+                    playSceneMusic('honeycomb');
+                }
+            }, 500);
+            
+            document.getElementById('instructions').textContent = 'DRAG your cursor around the circle outline of the honeycomb cookie!';
         }
 
         function setupGlassBridge() {
             gameTimer = 67;
-            gameState.bridgePosition = { tile: -1 }; // Start below tiles, -1 means at starting position
+            
+            // Clean up any previous game state
+            gameState.honeycombComplete = false;
+            gameState.tracingActive = false;
+            gameState.tracingStarted = false;
+            
+            gameState.bridgePosition = { row: -1, col: 0 }; // Start above tiles, -1 means at starting position
             gameState.onBridge = false;
             gameState.selectedTile = null; // Track which tile is selected
             
-            // Generate safe tiles - 6 tiles total, randomize which ones are safe
+            // Generate safe tiles - 7 rows, 2 columns each, one safe per row
             gameState.safeTiles = [];
-            for (let i = 0; i < 6; i++) {
-                gameState.safeTiles[i] = Math.random() < 0.5; // true = safe, false = unsafe
+            for (let i = 0; i < 7; i++) {
+                gameState.safeTiles[i] = Math.random() < 0.5 ? 0 : 1; // 0 = left safe, 1 = right safe
             }
             
             startGameTimer();
             
-            document.getElementById('instructions').innerHTML = '🖱️ CLICK tile to select &nbsp;•&nbsp; SPACE to jump &nbsp;•&nbsp; Move upward across the tiles!';
+            // Play final song for glass bridge scene
+            playSceneMusic('glassBridge');
+            
+            document.getElementById('instructions').innerHTML = '🖱️ CLICK tile to select &nbsp;•&nbsp; SPACE to jump &nbsp;•&nbsp; Move upward row by row!';
         }
 
         function setupGameOver() {
             document.getElementById('instructions').textContent = 'Press any key to restart from Red Light Green Light';
+            
+            // Stop all music on game over
+            stopBackgroundMusic();
             
             // Play death audio sequence
             setTimeout(() => {
@@ -429,6 +588,35 @@
         function setupWin() {
             document.getElementById('instructions').textContent = 'Press any key to return to menu';
         }
+
+        function setupFinalScreen() {
+            // Stop scene music for finale
+            stopBackgroundMusic();
+            
+            // Play celebratory sounds
+            playCelebrationSounds();
+            
+            document.getElementById('instructions').textContent = 'Congratulations! You completed all the Alpha Games! Press any key to return to menu';
+        }
+
+        function playCelebrationSounds() {
+            // Play a sequence of triumphant beeps
+            setTimeout(() => {
+                initAudioContext();
+                createBeep(523, 0.3); // C5
+            }, 200);
+            setTimeout(() => createBeep(659, 0.3), 400); // E5
+            setTimeout(() => createBeep(784, 0.3), 600); // G5
+            setTimeout(() => createBeep(1047, 0.5), 800); // C6
+            setTimeout(() => createBeep(1047, 0.8), 1200); // C6 longer
+            
+            // Add some sparkly high notes
+            setTimeout(() => createBeep(1568, 0.2), 1600); // G6
+            setTimeout(() => createBeep(1397, 0.2), 1800); // F6
+            setTimeout(() => createBeep(1047, 0.4), 2000); // C6
+        }
+
+        // Honeycomb circle tracing - no longer need Alpha A functions
 
         // Game Timer
         function startGameTimer() {
@@ -482,8 +670,8 @@
             if (gameState.timerInterval) clearInterval(gameState.timerInterval);
             if (gameState.lightInterval) clearInterval(gameState.lightInterval);
             
-            playVictoryFanfare();
-            showScene('win');
+            // Go directly to final diploma screen
+            showScene('finalscreen');
         }
 
         // Rendering Functions
@@ -512,6 +700,9 @@
                     break;
                 case 'win':
                     renderWin();
+                    break;
+                case 'finalscreen':
+                    renderFinalScreen();
                     break;
             }
             
@@ -806,8 +997,10 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
             // Spotlight effect
-            const centerX = canvas.width / 2;
-            const centerY = canvas.height / 2;
+            const centerX = gameState.cookieCenter.x;
+            const centerY = gameState.cookieCenter.y;
+            const radius = gameState.cookieRadius;
+            
             const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 300);
             gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
             gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
@@ -816,25 +1009,24 @@
             
             // Honeycomb cookie
             if (assets.honeycomb && assets.honeycomb.complete) {
-                const cookieSize = 300;
+                const cookieSize = 240;
                 const cookieX = centerX - cookieSize / 2;
                 const cookieY = centerY - cookieSize / 2;
                 ctx.drawImage(assets.honeycomb, cookieX, cookieY, cookieSize, cookieSize);
                 
                 // Draw the circle outline that needs to be traced
-                const radius = gameState.cookieRadius;
-                
-                // Draw main circle outline in red
-                ctx.strokeStyle = '#ff0000';
-                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#ff6600';
+                ctx.lineWidth = 4;
+                ctx.setLineDash([8, 4]); // Dashed circle
                 ctx.beginPath();
                 ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
                 ctx.stroke();
+                ctx.setLineDash([]); // Reset dash
                 
                 // Draw traced portions in gold
                 if (gameState.honeycombProgress.length > 1) {
                     ctx.strokeStyle = '#ffd700';
-                    ctx.lineWidth = 5;
+                    ctx.lineWidth = 6;
                     ctx.shadowBlur = 10;
                     ctx.shadowColor = '#ffd700';
                     ctx.beginPath();
@@ -850,29 +1042,30 @@
                 ctx.fillStyle = '#ffd700';
                 ctx.shadowBlur = 8;
                 ctx.shadowColor = '#ffd700';
-                for (let angleDeg of gameState.completedAngles) {
-                    const angleRad = angleDeg * Math.PI / 180;
-                    const dotX = centerX + Math.cos(angleRad) * radius;
-                    const dotY = centerY + Math.sin(angleRad) * radius;
+                for (let angle of gameState.completedAngles) {
+                    const dotX = centerX + Math.cos(angle) * radius;
+                    const dotY = centerY + Math.sin(angle) * radius;
                     ctx.beginPath();
-                    ctx.arc(dotX, dotY, 2, 0, Math.PI * 2);
+                    ctx.arc(dotX, dotY, 3, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 ctx.shadowBlur = 0;
                 
                 // Mouse cursor with distance indicator
-                const distanceFromCenter = Math.sqrt(
-                    Math.pow(gameState.mousePos.x - centerX, 2) + 
-                    Math.pow(gameState.mousePos.y - centerY, 2)
-                );
-                const isOnTarget = Math.abs(distanceFromCenter - radius) < 8;
-                
-                ctx.fillStyle = gameState.tracingActive ? 
-                    (isOnTarget ? '#00ff00' : '#ff0000') : '#fff';
-                ctx.beginPath();
-                ctx.arc(gameState.mousePos.x, gameState.mousePos.y, 
-                    gameState.tracingActive ? 6 : 4, 0, Math.PI * 2);
-                ctx.fill();
+                if (gameState.mousePos) {
+                    const distanceFromCenter = Math.sqrt(
+                        Math.pow(gameState.mousePos.x - centerX, 2) + 
+                        Math.pow(gameState.mousePos.y - centerY, 2)
+                    );
+                    const isOnTarget = Math.abs(distanceFromCenter - radius) < 12; // More forgiving
+                    
+                    ctx.fillStyle = gameState.isDragging ? 
+                        (isOnTarget ? '#00ff00' : '#ff0000') : '#fff';
+                    ctx.beginPath();
+                    ctx.arc(gameState.mousePos.x, gameState.mousePos.y, 
+                        gameState.isDragging ? 6 : 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
                 
                 // Show progress percentage
                 const progress = Math.floor(gameState.traceProgress * 100);
@@ -881,22 +1074,38 @@
                 ctx.textAlign = 'center';
                 ctx.fillText(`${progress}% Complete`, centerX, centerY + 200);
                 
-                // Show strict warning
+                // Show drag instruction
                 ctx.font = 'bold 16px Orbitron';
-                ctx.fillStyle = '#ff0000';
-                ctx.fillText('STAY ON THE EDGE OR CRACK!', centerX, centerY + 230);
+                ctx.fillStyle = gameState.isDragging ? '#00ff00' : '#ffaa00';
+                ctx.fillText(gameState.isDragging ? 'DRAGGING - STAY ON CIRCLE!' : 'CLICK & DRAG ON CIRCLE OUTLINE', centerX, centerY + 230);
             }
             
             ctx.font = 'bold 36px Orbitron';
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
-            ctx.fillText('TRACE THE COOKIE EDGE', canvas.width / 2, 80);
+            ctx.fillText('HONEYCOMB CIRCLE', canvas.width / 2, 80);
             ctx.font = 'bold 20px Orbitron';
             ctx.fillStyle = '#ff0000';
-            ctx.fillText('Follow the EXACT circular outline - Any deviation CRACKS the cookie!', canvas.width / 2, 110);
+            ctx.fillText('DRAG around the EXACT circle outline - Any deviation CRACKS the cookie!', canvas.width / 2, 110);
             ctx.font = 'bold 18px Orbitron';
             ctx.fillStyle = '#fff';
-            ctx.fillText('This is for advanced gamers only - stay on the red circle!', canvas.width / 2, 135);
+            ctx.fillText('Click and drag on the dashed circle outline to trace it!', canvas.width / 2, 135);
+            
+            // Show circle tracing progress
+            if (gameState.completedAngles && gameState.completedAngles.length > 0) {
+                ctx.font = 'bold 20px Orbitron';
+                ctx.fillStyle = '#ffd700';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#ffd700';
+                ctx.fillText(`Circle Progress: ${gameState.completedAngles.length} angles traced`, canvas.width / 2, canvas.height - 100);
+                
+                // Show completion status
+                ctx.font = 'bold 16px Orbitron';
+                ctx.fillStyle = gameState.traceProgress > 0.85 ? '#00ff00' : '#ffaa00';
+                const statusText = gameState.traceProgress > 0.85 ? '✓ CIRCLE COMPLETE!' : `Need ${Math.ceil((0.85 - gameState.traceProgress) * 60)} more angles`;
+                ctx.fillText(statusText, canvas.width / 2, canvas.height - 70);
+                ctx.shadowBlur = 0;
+            }
         }
 
         function renderGlassBridge() {
@@ -909,53 +1118,67 @@
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
             
-            // 6 tiles arranged horizontally across the screen
-            const tileWidth = 100;
-            const tileHeight = 80;
-            const totalWidth = 6 * tileWidth;
-            const startX = (canvas.width - totalWidth) / 2;
-            const tileY = canvas.height / 2 - 40; // Middle of screen
+            // 7 rows x 2 columns of tiles - bigger and more elevated
+            const tileWidth = 140;
+            const tileHeight = 100;
+            const totalTileWidth = tileWidth * 2; // Two tiles side by side
+            const startX = (canvas.width - totalTileWidth) / 2; // Center two tiles properly
+            const startY = 120; // Start higher up
+            const rowSpacing = 85;
             
-            // Check if tiles should flash (every 6 seconds)
-            const time = Date.now() / 6000; // 6-second cycle
-            const flashIntensity = Math.sin(time * Math.PI * 2);
-            const shouldFlash = flashIntensity > 0.7; // Flash when sine wave is high
+            // Check if safe tiles should flash (every 5 seconds)
+            const time = Date.now() / 5000; // 5-second cycle
+            const flashPhase = time % 1; // Get the decimal part (0-1)
+            const shouldFlash = flashPhase > 0.85 && flashPhase < 0.95; // Flash for a brief moment
             
-            // Render 6 glass tiles
-            for (let i = 0; i < 6; i++) {
-                const x = startX + i * tileWidth;
-                const y = tileY;
-                
-                // Use tile.png normally, tilelight.png when flashing
-                const tileImage = shouldFlash ? assets.tilelight : assets.tile;
-                
-                if (tileImage && tileImage.complete) {
-                    ctx.drawImage(tileImage, x, y, tileWidth, tileHeight);
-                } else {
-                    // Fallback tile rendering
-                    ctx.fillStyle = shouldFlash ? '#88ccff' : '#4a90e2';
-                    ctx.fillRect(x, y, tileWidth, tileHeight);
-                    ctx.strokeStyle = '#333';
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(x, y, tileWidth, tileHeight);
-                }
-                
-                // Tile selection highlight
-                if (gameState.selectedTile === i) {
-                    ctx.fillStyle = 'rgba(255, 255, 0, 0.4)';
-                    ctx.fillRect(x, y, tileWidth, tileHeight);
+            // Render 7 rows x 2 columns of tiles going upward
+            for (let row = 0; row < 7; row++) {
+                for (let col = 0; col < 2; col++) {
+                    const x = startX + col * tileWidth;
+                    const y = startY + row * rowSpacing;
                     
-                    ctx.strokeStyle = '#ffff00';
-                    ctx.lineWidth = 4;
-                    ctx.strokeRect(x + 2, y + 2, tileWidth - 4, tileHeight - 4);
+                    // Check if this tile is safe
+                    const isSafe = gameState.safeTiles[row] === col;
+                    
+                    // Use tilelight.png for safe tiles when flashing, tile.png otherwise
+                    const tileImage = (isSafe && shouldFlash) ? assets.tilelight : assets.tile;
+                    
+                    // Add elevation shadow first
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                    ctx.fillRect(x + 8, y + 8, tileWidth, tileHeight);
+                    
+                    if (tileImage && tileImage.complete) {
+                        ctx.drawImage(tileImage, x, y, tileWidth, tileHeight);
+                    } else {
+                        // Fallback tile rendering with elevation
+                        ctx.fillStyle = (isSafe && shouldFlash) ? '#88ccff' : '#4a90e2';
+                        ctx.fillRect(x, y, tileWidth, tileHeight);
+                        ctx.strokeStyle = '#333';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x, y, tileWidth, tileHeight);
+                    }
+                    
+                    // Add glass shine effect
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                    ctx.fillRect(x, y, tileWidth, tileHeight / 3);
+                    
+                    // Tile selection highlight
+                    if (gameState.selectedTile && gameState.selectedTile.row === row && gameState.selectedTile.col === col) {
+                        ctx.fillStyle = 'rgba(255, 255, 0, 0.4)';
+                        ctx.fillRect(x, y, tileWidth, tileHeight);
+                        
+                        ctx.strokeStyle = '#ffff00';
+                        ctx.lineWidth = 4;
+                        ctx.strokeRect(x + 2, y + 2, tileWidth - 4, tileHeight - 4);
+                    }
                 }
             }
             
             // Player position
-            if (gameState.bridgePosition.tile >= 0) {
+            if (gameState.bridgePosition.row >= 0) {
                 // Player is on a tile
-                const playerX = startX + gameState.bridgePosition.tile * tileWidth + tileWidth/2;
-                const playerY = tileY + tileHeight/2;
+                const playerX = startX + gameState.bridgePosition.col * tileWidth + tileWidth/2;
+                const playerY = startY + gameState.bridgePosition.row * rowSpacing + tileHeight/2;
                 
                 if (assets.player && assets.player.complete) {
                     ctx.drawImage(assets.player, playerX - 30, playerY - 40, 60, 80);
@@ -974,9 +1197,9 @@
                 ctx.strokeText('67', playerX, playerY - 50);
                 ctx.fillText('67', playerX, playerY - 50);
             } else {
-                // Player at starting position (bottom of screen)
+                // Player at starting position (top of screen, ready to jump onto first tile)
                 const playerStartX = canvas.width / 2;
-                const playerStartY = canvas.height - 100;
+                const playerStartY = 60; // Position at top, ready to jump onto first tiles at y=120
                 
                 if (assets.player && assets.player.complete) {
                     ctx.drawImage(assets.player, playerStartX - 30, playerStartY, 60, 80);
@@ -994,27 +1217,40 @@
                 ctx.fillText('67', playerStartX, playerStartY - 10);
             }
             
-            // Instructions
-            ctx.font = 'bold 24px Orbitron';
+            // Title
+            ctx.font = 'bold 28px Orbitron';
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#0066cc';
             ctx.fillText('GLASS BRIDGE', canvas.width / 2, 50);
+            ctx.shadowBlur = 0;
             
-            // Show progress and instructions
-            if (gameState.bridgePosition.tile >= 0) {
-                ctx.font = 'bold 16px Orbitron';
-                ctx.fillStyle = '#fff';
-                ctx.fillText(`Tile ${gameState.bridgePosition.tile + 1} of 6`, canvas.width / 2, canvas.height - 80);
+            // Single instruction area - no overlapping
+            ctx.font = 'bold 18px Orbitron';
+            if (gameState.bridgePosition.row >= 0) {
+                // On bridge - show progress
+                ctx.fillStyle = '#00ff00';
+                ctx.fillText(`Row ${gameState.bridgePosition.row + 1} of 7`, canvas.width / 2, 80);
                 
-                if (gameState.selectedTile !== null) {
-                    ctx.fillText(`Selected: Tile ${gameState.selectedTile + 1} (Press SPACE to jump)`, canvas.width / 2, canvas.height - 50);
+                if (gameState.selectedTile) {
+                    const tileText = gameState.selectedTile.col === 0 ? 'LEFT' : 'RIGHT';
+                    ctx.fillStyle = '#ffff00';
+                    ctx.fillText(`${tileText} tile selected - SPACE to jump!`, canvas.width / 2, 100);
                 } else {
-                    ctx.fillText('Click on a tile to select your path', canvas.width / 2, canvas.height - 50);
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText('Click a tile in the next row', canvas.width / 2, 100);
                 }
             } else {
-                ctx.font = 'bold 16px Orbitron';
-                ctx.fillStyle = '#ffaa00';
-                ctx.fillText('Click on a tile to begin your crossing!', canvas.width / 2, canvas.height - 50);
+                // Starting position
+                if (gameState.selectedTile) {
+                    const tileText = gameState.selectedTile.col === 0 ? 'LEFT' : 'RIGHT';
+                    ctx.fillStyle = '#ffff00';
+                    ctx.fillText(`${tileText} tile selected - SPACE to start!`, canvas.width / 2, 80);
+                } else {
+                    ctx.fillStyle = '#ffaa00';
+                    ctx.fillText('Click a tile in the first row to begin!', canvas.width / 2, 80);
+                }
             }
         }
 
@@ -1030,11 +1266,8 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
             // Death screen elements
-            ctx.fillStyle = '#000';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
             ctx.fillRect(150, 200, canvas.width - 300, canvas.height - 400);
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(150, 200, canvas.width - 300, canvas.height - 400);
             
             // Crossed out 67
             ctx.font = 'bold 120px Orbitron';
@@ -1119,6 +1352,85 @@
             ctx.fillText('Thank you for your participation, Contestant 67.', canvas.width / 2, 650);
         }
 
+        function renderFinalScreen() {
+            // Background - finalscreen.png
+            if (assets.finalscreen && assets.finalscreen.complete) {
+                ctx.drawImage(assets.finalscreen, 0, 0, canvas.width, canvas.height);
+            } else {
+                // Fallback golden background
+                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                gradient.addColorStop(0, '#ffd700');
+                gradient.addColorStop(1, '#b8860b');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Golden sparkles and celebration particles
+            const time = Date.now() / 1000;
+            for(let i = 0; i < 100; i++) {
+                const x = (Math.sin(time + i) * 200) + canvas.width / 2 + (Math.random() - 0.5) * 600;
+                const y = (Math.cos(time * 1.5 + i) * 150) + canvas.height / 2 + (Math.random() - 0.5) * 400;
+                const size = Math.sin(time * 3 + i) * 2 + 3;
+                const alpha = Math.sin(time * 2 + i) * 0.5 + 0.5;
+                
+                ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#ffd700';
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+            
+            // Tuition diploma - money.png with glow effect
+            if (assets.money && assets.money.complete) {
+                const diplomaSize = 400;
+                const diplomaX = canvas.width / 2 - diplomaSize / 2;
+                const diplomaY = canvas.height / 2 - diplomaSize / 2;
+                
+                // Glowing effect - multiple layers
+                const glowIntensity = Math.sin(time * 2) * 0.3 + 0.7;
+                
+                // Outer glow
+                ctx.shadowBlur = 50;
+                ctx.shadowColor = `rgba(255, 215, 0, ${glowIntensity})`;
+                ctx.drawImage(assets.money, diplomaX, diplomaY, diplomaSize, diplomaSize);
+                
+                // Inner glow
+                ctx.shadowBlur = 30;
+                ctx.shadowColor = `rgba(255, 255, 255, ${glowIntensity * 0.8})`;
+                ctx.drawImage(assets.money, diplomaX, diplomaY, diplomaSize, diplomaSize);
+                
+                // Final crisp render
+                ctx.shadowBlur = 0;
+                ctx.drawImage(assets.money, diplomaX, diplomaY, diplomaSize, diplomaSize);
+            }
+            
+            // Congratulations text with glow
+            ctx.font = 'bold 48px Orbitron';
+            ctx.fillStyle = '#ffd700';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ffd700';
+            ctx.fillText('TUITION PAID!', canvas.width / 2, 150);
+            
+            ctx.font = 'bold 32px Orbitron';
+            ctx.fillStyle = '#fff';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ffd700';
+            ctx.fillText('Congratulations Contestant #67!', canvas.width / 2, 200);
+            
+            ctx.font = 'bold 24px Orbitron';
+            ctx.fillStyle = '#ffeb3b';
+            ctx.shadowBlur = 10;
+            ctx.fillText('You have successfully completed all Alpha Games', canvas.width / 2, canvas.height - 120);
+            
+            ctx.font = 'bold 20px Orbitron';
+            ctx.fillStyle = '#fff';
+            ctx.fillText('Your education is now fully funded!', canvas.width / 2, canvas.height - 80);
+            ctx.shadowBlur = 0;
+        }
+
         // Input Handling
         function handleKeyDown(e) {
             gameState.keys[e.key.toLowerCase()] = true;
@@ -1141,7 +1453,9 @@
                 handleBridgeMovement(e.key);
             } else if (currentScene === 'gameOver') {
                 showScene('redLightGreenLight'); // Restart from Red Light Green Light
-            } else if (currentScene === 'win') {
+                        } else if (currentScene === 'win') {
+                showScene('mainMenu');
+            } else if (currentScene === 'finalscreen') {
                 showScene('mainMenu');
             }
         }
@@ -1154,6 +1468,12 @@
         }
 
         function handleRedLightMovement(key) {
+            // BLOCK ALL MOVEMENT during red light!
+            if (!gameState.isGreenLight) {
+                gameOver('Moved during red light! You must stop when receiving feedback.');
+                return;
+            }
+
             let moved = false;
             const finishLineX = canvas.width - 200; // Same as in render
             
@@ -1202,28 +1522,40 @@
                 
                 // Check if reached finish line (horizontal distance)
                 if (gameState.playerPosition.x >= finishLineX - 60) {
+                    // Player wins Red Light Green Light!
                     clearInterval(gameState.timerInterval);
                     clearInterval(gameState.lightInterval);
-                    setTimeout(() => showScene('honeycomb'), 1000);
+                    gameState.isMoving = false; // Stop movement
+                    
+                    // Smooth transition to honeycomb with victory fanfare
+                    playVictoryFanfare();
+                    setTimeout(() => {
+                        showScene('honeycomb');
+                    }, 1500); // Extra time for victory sound
                 }
             }
         }
 
         function handleBridgeMovement(key) {
             if (key === ' ' && gameState.selectedTile !== null) {
-                if (gameState.bridgePosition.tile < 0) {
+                if (gameState.bridgePosition.row < 0) {
                     // First jump - from starting position to selected tile
-                    gameState.bridgePosition.tile = gameState.selectedTile;
+                    gameState.bridgePosition.row = gameState.selectedTile.row;
+                    gameState.bridgePosition.col = gameState.selectedTile.col;
                     gameState.selectedTile = null; // Clear selection
                     checkTileBreak();
                 } else {
-                    // Move to next tile - can only move upward (to lower-indexed tiles)
-                    if (gameState.selectedTile < gameState.bridgePosition.tile) {
-                        gameState.bridgePosition.tile = gameState.selectedTile;
+                    // Move to next row - can only move upward (to higher row numbers)
+                    const targetRow = gameState.selectedTile.row;
+                    const targetCol = gameState.selectedTile.col;
+                    
+                    if (targetRow === gameState.bridgePosition.row + 1) {
+                        gameState.bridgePosition.row = targetRow;
+                        gameState.bridgePosition.col = targetCol;
                         gameState.selectedTile = null; // Clear selection
                         
-                        if (gameState.bridgePosition.tile === 0) {
-                            // Reached the end (tile 0 is the top)!
+                        if (targetRow >= 6) {
+                            // Reached the end (row 6 is the last row)!
                             clearInterval(gameState.timerInterval);
                             setTimeout(() => winGame(), 1000);
                         } else {
@@ -1235,8 +1567,8 @@
         }
 
         function checkTileBreak() {
-            const tileIndex = gameState.bridgePosition.tile;
-            const isSafe = gameState.safeTiles[tileIndex];
+            const { row, col } = gameState.bridgePosition;
+            const isSafe = gameState.safeTiles[row] === col;
             
             if (!isSafe) {
                 playGlassBreak();
@@ -1249,7 +1581,7 @@
             gameState.mousePos.x = e.clientX - rect.left;
             gameState.mousePos.y = e.clientY - rect.top;
             
-            if (currentScene === 'honeycomb' && gameState.tracingActive) {
+            if (currentScene === 'honeycomb' && gameState.isDragging) {
                 checkHoneycombTrace();
             }
         }
@@ -1275,31 +1607,47 @@
             } else if (currentScene === 'gameOver') {
                 // Click to restart from Red Light Green Light
                 showScene('redLightGreenLight');
+            } else if (currentScene === 'finalscreen') {
+                // Click to return to main menu
+                showScene('mainMenu');
             } else if (currentScene === 'honeycomb') {
-                gameState.tracingActive = true;
+                // Start dragging for circle tracing
+                gameState.isDragging = true;
+                console.log('🎯 Started dragging in honeycomb scene');
             } else if (currentScene === 'glassBridge') {
                 const rect = canvas.getBoundingClientRect();
                 const clickX = e.clientX - rect.left;
                 const clickY = e.clientY - rect.top;
                 
-                // Check if clicking on a tile - 6 tiles horizontally
-                const tileWidth = 100;
-                const tileHeight = 80;
-                const totalWidth = 6 * tileWidth;
-                const startX = (canvas.width - totalWidth) / 2;
-                const tileY = canvas.height / 2 - 40;
+                // Check if clicking on a tile - 7 rows x 2 columns (match render sizes)
+                const tileWidth = 140;
+                const tileHeight = 100;
+                const totalTileWidth = tileWidth * 2; // Two tiles side by side
+                const startX = (canvas.width - totalTileWidth) / 2; // Center two tiles properly
+                const startY = 120; // Start higher up
+                const rowSpacing = 85;
                 
-                for (let i = 0; i < 6; i++) {
-                    const tileX = startX + i * tileWidth;
-                    
-                    // Check if click is within this tile
-                    if (clickX >= tileX && clickX <= tileX + tileWidth &&
-                        clickY >= tileY && clickY <= tileY + tileHeight) {
+                for (let row = 0; row < 7; row++) {
+                    for (let col = 0; col < 2; col++) {
+                        const tileX = startX + col * tileWidth;
+                        const tileY = startY + row * rowSpacing;
                         
-                        // Always allow tile selection
-                        gameState.selectedTile = i;
-                        playMenuBeep();
-                        return;
+                                                // Check if click is within this tile
+                        if (clickX >= tileX && clickX <= tileX + tileWidth &&
+                            clickY >= tileY && clickY <= tileY + tileHeight) {
+                            
+                            // Allow tile selection with proper rules
+                            if (gameState.bridgePosition.row < 0 && row === 0) {
+                                // Starting - can select first row only
+                                gameState.selectedTile = { row, col };
+                                playMenuBeep();
+                            } else if (gameState.bridgePosition.row >= 0 && row === gameState.bridgePosition.row + 1) {
+                                // On bridge - can select next row only
+                                gameState.selectedTile = { row, col };
+                                playMenuBeep();
+                            }
+                    return;
+                        }
                     }
                 }
             }
@@ -1307,61 +1655,77 @@
 
         function handleMouseUp(e) {
             if (currentScene === 'honeycomb') {
-                gameState.tracingActive = false;
+                gameState.isDragging = false;
+                console.log('🎯 Stopped dragging in honeycomb scene');
             }
         }
 
         function checkHoneycombTrace() {
             const mouseX = gameState.mousePos.x;
             const mouseY = gameState.mousePos.y;
-            
             const centerX = gameState.cookieCenter.x;
             const centerY = gameState.cookieCenter.y;
             const radius = gameState.cookieRadius;
             
-            // Calculate distance from mouse to center
+            // Calculate distance from center
             const distanceFromCenter = Math.sqrt(
-                Math.pow(mouseX - centerX, 2) + 
-                Math.pow(mouseY - centerY, 2)
+                Math.pow(mouseX - centerX, 2) + Math.pow(mouseY - centerY, 2)
             );
             
-            // Calculate current angle
-            const angle = Math.atan2(mouseY - centerY, mouseX - centerX);
-            const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2); // 0 to 2π
+            // Check if mouse is on the circle path (within tolerance)
+            const isOnCircle = Math.abs(distanceFromCenter - radius) < 12; // 12 pixel tolerance
             
-            // Check if mouse is on the circle edge (very strict tolerance)
-            const tolerance = 8; // Very tight - only 8 pixels tolerance
-            const isOnCircle = Math.abs(distanceFromCenter - radius) < tolerance;
-            
-            if (isOnCircle && gameState.tracingActive) {
-                // Mark this angle as completed
-                const angleDegrees = Math.floor(normalizedAngle * 180 / Math.PI);
-                gameState.completedAngles.add(angleDegrees);
+            if (isOnCircle && gameState.isDragging) {
+                // Calculate angle from center
+                const angle = Math.atan2(mouseY - centerY, mouseX - centerX);
                 
-                gameState.honeycombProgress.push({x: mouseX, y: mouseY, angle: normalizedAngle});
-                gameState.lastAngle = normalizedAngle;
+                // Normalize angle to 0-2π
+                const normalizedAngle = angle < 0 ? angle + Math.PI * 2 : angle;
                 
-                // Check completion - need to trace most of the circle
-                const completionPercent = gameState.completedAngles.size / 360;
-                gameState.traceProgress = completionPercent;
+                // Add to progress if not already traced this angle (within small tolerance)
+                const angleExists = gameState.completedAngles.some(completedAngle => {
+                    const angleDiff = Math.abs(completedAngle - normalizedAngle);
+                    return angleDiff < 0.1 || angleDiff > (Math.PI * 2 - 0.1); // Account for wraparound
+                });
                 
-                if (completionPercent > 0.85) { // Need 85% of circle traced
-                    gameState.honeycombComplete = true;
-                    clearInterval(gameState.timerInterval);
-                    setTimeout(() => showScene('glassBridge'), 1000);
+                if (!angleExists) {
+                    gameState.completedAngles.push(normalizedAngle);
                 }
                 
-            } else if (gameState.tracingActive && gameState.tracingStarted) {
-                // Strict failure - any deviation from circle edge breaks cookie
+                // Add to visual progress trail
+                gameState.honeycombProgress.push({x: mouseX, y: mouseY});
+                
+                // Calculate completion percentage based on angle coverage
+                const uniqueAngles = gameState.completedAngles.length;
+                const totalAnglesNeeded = 60; // Need to cover ~60 discrete angles for full circle
+                gameState.traceProgress = Math.min(uniqueAngles / totalAnglesNeeded, 1.0);
+                
+                // Check for completion
+                if (gameState.traceProgress >= 0.85) { // 85% of circle traced
+                    gameState.honeycombComplete = true;
+                    clearInterval(gameState.timerInterval);
+                    gameState.isDragging = false; // Stop dragging
+                    gameState.tracingActive = false;
+                    
+                    // Smooth transition to glass bridge with victory fanfare
+                    playVictoryFanfare();
+                    setTimeout(() => {
+                        showScene('glassBridge');
+                    }, 1500); // Extra time for victory sound
+                }
+                
+            } else if (gameState.isDragging && gameState.tracingStarted) {
+                // Strict failure - any deviation from circle path breaks cookie
                 if (!isOnCircle) {
                     playCrackSound();
-                    gameOver('Shape broken. You must not be an expert.');
+                    gameOver('Cookie cracked! You must stay exactly on the circle outline!');
                 }
             }
             
-            // Start tracing when mouse gets close to circle edge
-            if (isOnCircle && gameState.tracingActive && !gameState.tracingStarted) {
+            // Start tracing when dragging begins on the circle
+            if (isOnCircle && gameState.isDragging && !gameState.tracingStarted) {
                 gameState.tracingStarted = true;
+                gameState.tracingActive = true;
             }
         }
 
@@ -1374,7 +1738,8 @@
 
         // Game Initialization
         function initGame() {
-        showScene('mainMenu');
+            loadBackgroundMusic();
+            showScene('mainMenu');
             render();
         }
 
