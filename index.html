@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alpha Games</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Orbitron', monospace;
+            background: #000;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            border: 2px solid #ff0000;
+            background: #000;
+            cursor: crosshair;
+        }
+
+        .ui-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .contestant-number {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 1.5rem;
+            font-weight: 900;
+            color: #ff0000;
+            text-shadow: 0 0 10px #ff0000;
+        }
+
+        .timer-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 2rem;
+            font-weight: 900;
+            color: #ff0000;
+            text-shadow: 0 0 20px #ff0000;
+        }
+
+        .game-status {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            font-weight: 900;
+            text-align: center;
+            text-shadow: 0 0 20px currentColor;
+            pointer-events: none;
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1rem;
+            text-align: center;
+            opacity: 0.9;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 5px;
+            border: 1px solid #ff0000;
+        }
+
+        .death-flash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #ff0000;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 999;
+            transition: opacity 0.1s;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="1200" height="800"></canvas>
+    
+    <!-- UI Overlays -->
+    <div class="ui-overlay">
+        <div class="contestant-number" id="contestantNumber">Contestant #67</div>
+        <div class="timer-display" id="timerDisplay"></div>
+        <div class="game-status" id="gameStatus"></div>
+        <div class="instructions" id="instructions"></div>
+        <div class="death-flash" id="deathFlash"></div>
+    </div>
+
+    <script>
+        // Game Engine Setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let audioContext;
+
+        // Initialize audio context on first user interaction
+        function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        // Game State
+        let currentScene = 'mainMenu';
+        let gameTimer = 67;
+        let assets = {};
+        let gameState = {
+            playerPosition: { x: 100, y: 700 },
+            isMoving: false,
+            isGreenLight: true,
+            honeycombProgress: [],
+            bridgePosition: { row: 0, col: 0 },
+            safeTiles: [],
+            mousePos: { x: 0, y: 0 },
+            keys: {},
+            moneyCounter: 0,
+            introStage: 0,
+            honeycombComplete: false,
+            tracingActive: false,
+            onBridge: false
+        };
+
+        // Audio System
+        function createBeep(frequency, duration, type = 'sine') {
+            if (!audioContext) return;
+            
+            try {
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = frequency;
+                oscillator.type = type;
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + duration);
+            } catch (e) {
+                console.log('Audio not available');
+            }
+        }
+
+        function playMenuBeep() { initAudioContext(); createBeep(800, 0.1); }
+        function playDeathSound() { initAudioContext(); createBeep(150, 0.5, 'sawtooth'); }
+        function playCrackSound() { initAudioContext(); createBeep(300, 0.3, 'square'); }
+        function playGlassBreak() { 
+            initAudioContext(); 
+            createBeep(800, 0.1, 'square'); 
+            setTimeout(() => createBeep(400, 0.2, 'square'), 50); 
+        }
+        function playVictoryFanfare() {
+            initAudioContext();
+            createBeep(523, 0.2);
+            setTimeout(() => createBeep(659, 0.2), 200);
+            setTimeout(() => createBeep(784, 0.4), 400);
+        }
+
+        // Asset Loading
+        function loadAssets() {
+            const assetList = [
+                { name: 'alphacrest', src: 'sprites/chloe/player/alphacrest.png' },
+                { name: 'player', src: 'sprites/chloe/player/player.png' },
+                { name: 'evilchloebackside', src: 'sprites/chloe/player/evilChloeBackside.png' },
+                { name: 'evilchloefrontside', src: 'sprites/chloe/player/evilChloeFrontside.png' },
+                { name: 'rlglscreen', src: 'sprites/chloe/player/rlglscreen.png' },
+                { name: 'honeycomb', src: 'sprites/chloe/player/honeycomb.png' }
+            ];
+
+            let loadedCount = 0;
+            
+            assetList.forEach(asset => {
+                const img = new Image();
+                img.onload = () => {
+                    loadedCount++;
+                    if (loadedCount === assetList.length) {
+                        initGame();
+                    }
+                };
+                img.onerror = () => {
+                    console.warn(`Failed to load ${asset.src}, using placeholder`);
+                    loadedCount++;
+                    if (loadedCount === assetList.length) {
+                        initGame();
+                    }
+                };
+                img.src = asset.src;
+                assets[asset.name] = img;
+            });
+        }
+
+        // Scene Management
+        function showScene(sceneName) {
+            currentScene = sceneName;
+            gameState.keys = {};
+            
+            // Clear UI
+            document.getElementById('timerDisplay').textContent = '';
+            document.getElementById('gameStatus').textContent = '';
+            document.getElementById('instructions').textContent = '';
+            
+            // Clear intervals
+            if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+            if (gameState.lightInterval) clearInterval(gameState.lightInterval);
+            
+            // Scene-specific setup
+            switch(sceneName) {
+                case 'mainMenu':
+                    setupMainMenu();
+                    break;
+                case 'intro':
+                    setupIntro();
+                    break;
+                case 'redLightGreenLight':
+                    setupRedLightGreenLight();
+                    break;
+                case 'honeycomb':
+                    setupHoneycomb();
+                    break;
+                case 'glassBridge':
+                    setupGlassBridge();
+                    break;
+                case 'gameOver':
+                    setupGameOver();
+                    break;
+                case 'win':
+                    setupWin();
+                    break;
+            }
+        }
+
+        // Scene Setup Functions
+        function setupMainMenu() {
+            gameState.moneyCounter = 0;
+        }
+
+        function setupIntro() {
+            gameState.moneyCounter = 0;
+            gameState.introStage = 0;
+            gameState.currentTextLine = 0;
+            gameState.introLines = [
+                "Your AlphaX project was not good enough for Chloe.",
+                "You've spent four years doing absolute shit. You aren't an expert,",
+                "you have only 10 followers on TikTok, and you are NOT graduating dawg.",
+                "",
+                "Unless you survive THE ALPHA GAMES! Then, you will graduate.",
+                "But if you lose… you will DIE!",
+                "",
+                "You are student #67.",
+                "",
+                "Press any key to begin"
+            ];
+            gameState.visibleLines = [];
+            
+            setTimeout(() => {
+                const countInterval = setInterval(() => {
+                    gameState.moneyCounter += 1000000;
+                    if (gameState.moneyCounter >= 67000000) {
+                        gameState.moneyCounter = 67000000;
+                        clearInterval(countInterval);
+                        gameState.introStage = 1;
+                        // Start showing text lines one by one
+                        startTextSequence();
+                    }
+                }, 50);
+            }, 1000);
+        }
+
+        function startTextSequence() {
+            const showNextLine = () => {
+                if (gameState.currentTextLine < gameState.introLines.length) {
+                    gameState.visibleLines.push(gameState.introLines[gameState.currentTextLine]);
+                    gameState.currentTextLine++;
+                    // Show next line after delay (faster for empty lines, slower for text)
+                    const delay = gameState.introLines[gameState.currentTextLine - 1] === "" ? 500 : 2000;
+                    setTimeout(showNextLine, delay);
+                } else {
+                    gameState.introStage = 2; // Ready for interaction
+                }
+            };
+            showNextLine();
+        }
+
+        function setupRedLightGreenLight() {
+            gameTimer = 67;
+            // Start at left side of classroom
+            gameState.playerPosition = { x: 80, y: canvas.height / 2, scale: 1.0 };
+            gameState.isGreenLight = true;
+            gameState.isMoving = false;
+            
+            // Generate other players spread across the starting area (left side)
+            gameState.otherPlayers = [];
+            for (let i = 0; i < 12; i++) {
+                gameState.otherPlayers.push({
+                    x: 50 + Math.random() * 100, // Start clustered at left
+                    y: 200 + Math.random() * 400, // Spread vertically
+                    scale: 1.0, // All start at full size
+                    number: Math.floor(Math.random() * 99) + 1,
+                    baseSpeed: 0.8 + Math.random() * 1.2, // Base movement speed
+                    eliminated: false
+                });
+            }
+            
+            startGameTimer();
+            startLightCycle();
+            
+            document.getElementById('instructions').textContent = 'Cross the classroom to reach Chloe. Move RIGHT toward her. FREEZE on RED!';
+        }
+
+        function setupHoneycomb() {
+            gameTimer = 67;
+            gameState.honeycombProgress = [];
+            gameState.honeycombComplete = false;
+            gameState.tracingActive = false;
+            gameState.tracingStarted = false;
+            
+            // Circle parameters for cookie outline
+            gameState.cookieCenter = { x: canvas.width / 2, y: canvas.height / 2 };
+            gameState.cookieRadius = 120; // Radius of the cookie circle
+            gameState.traceProgress = 0; // How much of the circle has been traced (0-1)
+            gameState.lastAngle = null; // Last traced angle
+            gameState.completedAngles = new Set(); // Track which angles have been traced
+            
+            startGameTimer();
+            
+            document.getElementById('instructions').textContent = 'Trace the EXACT edge of the cookie circle. Any deviation = CRACK!';
+        }
+
+        function setupGlassBridge() {
+            gameTimer = 67;
+            gameState.bridgePosition = { row: 0, col: 0 };
+            gameState.onBridge = false;
+            gameState.selectedTile = null; // Track which tile is selected
+            
+            // Generate safe tiles (randomize which tile in each row is safe)
+            gameState.safeTiles = [];
+            for (let i = 0; i < 7; i++) {
+                gameState.safeTiles[i] = Math.random() < 0.5 ? 0 : 1; // 0 = left safe, 1 = right safe
+            }
+            
+            startGameTimer();
+            
+            document.getElementById('instructions').innerHTML = '🖱️ CLICK tile to select &nbsp;•&nbsp; SPACE to jump &nbsp;•&nbsp; Watch for subtle shimmer!';
+        }
+
+        function setupGameOver() {
+            document.getElementById('instructions').textContent = 'Press any key to retry';
+        }
+
+        function setupWin() {
+            document.getElementById('instructions').textContent = 'Press any key to return to menu';
+        }
+
+        // Game Timer
+        function startGameTimer() {
+            gameState.timerInterval = setInterval(() => {
+                gameTimer--;
+                document.getElementById('timerDisplay').textContent = gameTimer;
+                
+                if (gameTimer <= 0) {
+                    gameOver("Time's up!");
+                }
+            }, 1000);
+        }
+
+        function startLightCycle() {
+            gameState.lightInterval = setInterval(() => {
+                gameState.isGreenLight = !gameState.isGreenLight;
+                
+                if (gameState.isGreenLight) {
+                    document.getElementById('gameStatus').textContent = 'GIVE FEEDBACK - GREEN - MOVE!';
+                    document.getElementById('gameStatus').style.color = '#00ff00';
+                } else {
+                    document.getElementById('gameStatus').textContent = 'RECEIVE FEEDBACK - RED - STOP!';
+                    document.getElementById('gameStatus').style.color = '#ff0000';
+                    
+                    // Check if player is moving during red
+                    if (gameState.isMoving) {
+                        gameOver('Moved during red. When it was time to receive feedback, you gave it instead.');
+                    }
+                }
+            }, 1500 + Math.random() * 4000); // Slightly longer intervals for the longer journey
+        }
+
+        // Death and Win Functions
+        function gameOver(reason) {
+            // Clear all intervals
+            if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+            if (gameState.lightInterval) clearInterval(gameState.lightInterval);
+            
+            // Death flash effect
+            const deathFlash = document.getElementById('deathFlash');
+            deathFlash.style.opacity = '0.8';
+            playDeathSound();
+            
+            setTimeout(() => {
+                deathFlash.style.opacity = '0';
+                showScene('gameOver');
+            }, 500);
+        }
+
+        function winGame() {
+            if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+            if (gameState.lightInterval) clearInterval(gameState.lightInterval);
+            
+            playVictoryFanfare();
+            showScene('win');
+        }
+
+        // Rendering Functions
+        function render() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            switch(currentScene) {
+                case 'mainMenu':
+                    renderMainMenu();
+                    break;
+                case 'intro':
+                    renderIntro();
+                    break;
+                case 'redLightGreenLight':
+                    renderRedLightGreenLight();
+                    break;
+                case 'honeycomb':
+                    renderHoneycomb();
+                    break;
+                case 'glassBridge':
+                    renderGlassBridge();
+                    break;
+                case 'gameOver':
+                    renderGameOver();
+                    break;
+                case 'win':
+                    renderWin();
+                    break;
+            }
+            
+            requestAnimationFrame(render);
+        }
+
+        function renderMainMenu() {
+            // Background
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Glitched Alpha crest
+            if (assets.alphacrest && assets.alphacrest.complete) {
+                const crestSize = 200;
+                const x = canvas.width / 2 - crestSize / 2;
+                const y = 150;
+                
+                // Glitch effect
+                ctx.save();
+                ctx.filter = 'hue-rotate(180deg) saturate(200%)';
+                ctx.drawImage(assets.alphacrest, x + Math.sin(Date.now() / 100) * 5, y, crestSize, crestSize);
+                ctx.restore();
+            }
+            
+            // Title
+            ctx.font = 'bold 72px Orbitron';
+            ctx.fillStyle = '#ff0000';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ff0000';
+            ctx.fillText('ALPHA GAMES', canvas.width / 2, 450);
+            ctx.shadowBlur = 0;
+            
+            // Buttons
+            ctx.font = 'bold 32px Orbitron';
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 2;
+            
+            // START button
+            const startY = 550;
+            ctx.strokeRect(canvas.width / 2 - 100, startY, 200, 60);
+            ctx.fillText('START', canvas.width / 2, startY + 40);
+            
+            // QUIT button
+            const quitY = 630;
+            ctx.strokeRect(canvas.width / 2 - 100, quitY, 200, 60);
+            ctx.fillText('QUIT', canvas.width / 2, quitY + 40);
+        }
+
+        function renderIntro() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Money counter
+            ctx.font = 'bold 48px Orbitron';
+            ctx.fillStyle = '#ff0000';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ff0000';
+            ctx.fillText(`$${gameState.moneyCounter.toLocaleString()}`, canvas.width / 2, 200);
+            ctx.shadowBlur = 0;
+            
+            // Show lines one by one
+            if (gameState.introStage >= 1 && gameState.visibleLines) {
+                ctx.font = 'bold 26px Orbitron';
+                ctx.fillStyle = '#fff';
+                
+                gameState.visibleLines.forEach((line, i) => {
+                    if (line === "") return; // Skip empty lines for rendering
+                    
+                    // Add fade-in effect for the most recent line
+                    if (i === gameState.visibleLines.length - 1 && gameState.introStage < 2) {
+                        ctx.fillStyle = '#ffff00'; // Highlight current line
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = '#ffff00';
+                    } else {
+                        ctx.fillStyle = '#fff';
+                        ctx.shadowBlur = 0;
+                    }
+                    
+                    // Special styling for key lines
+                    if (line.includes("THE ALPHA GAMES")) {
+                        ctx.fillStyle = '#ff0000';
+                        ctx.shadowBlur = 15;
+                        ctx.shadowColor = '#ff0000';
+                        ctx.font = 'bold 30px Orbitron';
+                    } else if (line.includes("student #67")) {
+                        ctx.fillStyle = '#ffd700';
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = '#ffd700';
+                        ctx.font = 'bold 32px Orbitron';
+                    } else if (line.includes("Press any key")) {
+                        ctx.fillStyle = gameState.introStage === 2 ? '#00ff00' : '#666';
+                        ctx.shadowBlur = gameState.introStage === 2 ? 15 : 0;
+                        ctx.shadowColor = '#00ff00';
+                        ctx.font = 'bold 24px Orbitron';
+                    } else {
+                        ctx.font = 'bold 26px Orbitron';
+                    }
+                    
+                    ctx.fillText(line, canvas.width / 2, 280 + i * 40);
+                    ctx.shadowBlur = 0;
+                });
+            }
+        }
+
+        function renderRedLightGreenLight() {
+            // Background - classroom perspective
+            if (assets.rlglscreen && assets.rlglscreen.complete) {
+                ctx.drawImage(assets.rlglscreen, 0, 0, canvas.width, canvas.height);
+            } else {
+                // Draw classroom background
+                ctx.fillStyle = '#2a2a2a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw floor tiles perspective
+                ctx.strokeStyle = '#444';
+                ctx.lineWidth = 1;
+                for (let i = 0; i < 20; i++) {
+                    const x = 60 + i * 55;
+                    ctx.beginPath();
+                    ctx.moveTo(x, 150);
+                    ctx.lineTo(x, canvas.height - 150);
+                    ctx.stroke();
+                }
+                
+                // Horizontal lines for depth
+                for (let i = 0; i < 8; i++) {
+                    const y = 150 + i * 75;
+                    ctx.beginPath();
+                    ctx.moveTo(60, y);
+                    ctx.lineTo(canvas.width - 60, y);
+                    ctx.stroke();
+                }
+            }
+            
+            // Starting line (vertical line on left)
+            const startLineX = 100;
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 6;
+            ctx.setLineDash([15, 15]);
+            ctx.beginPath();
+            ctx.moveTo(startLineX, 150);
+            ctx.lineTo(startLineX, canvas.height - 150);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            ctx.font = 'bold 24px Orbitron';
+            ctx.fillStyle = '#00ff00';
+            ctx.textAlign = 'center';
+            ctx.save();
+            ctx.translate(startLineX - 30, canvas.height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('START', 0, 0);
+            ctx.restore();
+            
+            // Finish line (vertical line on right side, middle of screen)
+            const finishLineX = canvas.width - 200; // Not at edge, but well to the right
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 8;
+            ctx.setLineDash([20, 20]);
+            ctx.beginPath();
+            ctx.moveTo(finishLineX, 150);
+            ctx.lineTo(finishLineX, canvas.height - 150);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            ctx.font = 'bold 32px Orbitron';
+            ctx.fillStyle = '#ff0000';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ff0000';
+            ctx.save();
+            ctx.translate(finishLineX + 40, canvas.height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('FINISH', 0, 0);
+            ctx.restore();
+            ctx.shadowBlur = 0;
+            
+            // LARGE Chloe teacher positioned behind finish line at right side
+            const chloe = gameState.isGreenLight ? assets.evilchloebackside : assets.evilchloefrontside;
+            if (chloe && chloe.complete) {
+                const chloeSize = 180; // Much larger
+                const chloeX = finishLineX + 50; // Behind finish line
+                const chloeY = canvas.height / 2 - chloeSize; // Center vertically
+                
+                ctx.drawImage(chloe, chloeX, chloeY, chloeSize, chloeSize * 1.8);
+                
+                // Large red glowing eyes during red light
+                if (!gameState.isGreenLight) {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.shadowBlur = 30;
+                    ctx.shadowColor = '#ff0000';
+                    ctx.beginPath();
+                    ctx.arc(chloeX + chloeSize * 0.35, chloeY + chloeSize * 0.3, 10, 0, Math.PI * 2);
+                    ctx.arc(chloeX + chloeSize * 0.65, chloeY + chloeSize * 0.3, 10, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+            }
+            
+            // Calculate perspective scaling for all players
+            function calculateScale(x) {
+                // Scale gets smaller as x increases (moving toward Chloe)
+                const progress = (x - 80) / (finishLineX - 80);
+                return Math.max(0.3, 1.0 - progress * 0.7); // Scale from 1.0 to 0.3
+            }
+            
+            // Other players with perspective scaling
+            if (gameState.otherPlayers) {
+                gameState.otherPlayers.forEach(player => {
+                    if (!player.eliminated) {
+                        // Move other players during green light
+                        if (gameState.isGreenLight) {
+                            if (player.x < finishLineX - 50) {
+                                // Exponential slowdown as they get closer
+                                const currentSpeed = player.baseSpeed * calculateScale(player.x);
+                                player.x += currentSpeed;
+                                player.scale = calculateScale(player.x);
+                            }
+                        } else {
+                            // Some players move during red light and get eliminated
+                            if (Math.random() < 0.001 && player.x > 300) {
+                                player.eliminated = true;
+                                // Flash effect for eliminated player
+                                ctx.fillStyle = '#ff0000';
+                                ctx.shadowBlur = 20;
+                                ctx.shadowColor = '#ff0000';
+                                const size = 60 * player.scale;
+                                ctx.fillRect(player.x - 5, player.y - 5, size + 10, size + 15);
+                                ctx.shadowBlur = 0;
+                                return;
+                            }
+                        }
+                        
+                        // Draw other player with scaling
+                        const playerSize = 50 * player.scale;
+                        const playerHeight = 70 * player.scale;
+                        
+                        if (assets.player && assets.player.complete) {
+                            ctx.save();
+                            ctx.filter = 'brightness(0.6) saturate(0.7) hue-rotate(' + (player.number * 3) + 'deg)';
+                            ctx.drawImage(assets.player, player.x - playerSize/2, player.y - playerHeight/2, playerSize, playerHeight);
+                            ctx.restore();
+                        } else {
+                            ctx.fillStyle = '#666';
+                            ctx.fillRect(player.x - playerSize/2, player.y - playerHeight/2, playerSize, playerHeight);
+                        }
+                        
+                        // Player number scaled
+                        const fontSize = Math.max(12, 16 * player.scale);
+                        ctx.font = `bold ${fontSize}px Orbitron`;
+                        ctx.fillStyle = '#fff';
+                        ctx.textAlign = 'center';
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 1;
+                        ctx.strokeText(player.number, player.x, player.y - playerHeight/2 - 10);
+                        ctx.fillText(player.number, player.x, player.y - playerHeight/2 - 10);
+                    }
+                });
+            }
+            
+            // Main player with perspective scaling
+            gameState.playerPosition.scale = calculateScale(gameState.playerPosition.x);
+            const playerSize = 60 * gameState.playerPosition.scale;
+            const playerHeight = 80 * gameState.playerPosition.scale;
+            
+            if (assets.player && assets.player.complete) {
+                ctx.drawImage(assets.player, 
+                    gameState.playerPosition.x - playerSize/2, 
+                    gameState.playerPosition.y - playerHeight/2, 
+                    playerSize, playerHeight);
+            } else {
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(gameState.playerPosition.x - playerSize/2, 
+                    gameState.playerPosition.y - playerHeight/2, 
+                    playerSize, playerHeight);
+            }
+            
+            // Player number scaled
+            const fontSize = Math.max(16, 24 * gameState.playerPosition.scale);
+            ctx.font = `bold ${fontSize}px Orbitron`;
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeText('67', gameState.playerPosition.x, gameState.playerPosition.y - playerHeight/2 - 15);
+            ctx.fillText('67', gameState.playerPosition.x, gameState.playerPosition.y - playerHeight/2 - 15);
+            
+            // Progress indicator - horizontal progress to Chloe
+            const totalDistance = finishLineX - 80;
+            const currentDistance = gameState.playerPosition.x - 80;
+            const progress = Math.max(0, Math.min(100, (currentDistance / totalDistance) * 100));
+            
+            // Progress bar
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(20, 20, 300, 25);
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(20, 20, 300, 25);
+            
+            ctx.fillStyle = progress > 90 ? '#00ff00' : '#ffff00';
+            ctx.fillRect(22, 22, (progress / 100) * 296, 21);
+            
+            ctx.font = 'bold 16px Orbitron';
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Distance to Chloe: ${Math.floor(progress)}%`, 20, 15);
+            
+            // Scale indicator
+            ctx.fillText(`Scale: ${Math.floor(gameState.playerPosition.scale * 100)}%`, 20, 65);
+        }
+
+        function renderHoneycomb() {
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Spotlight effect
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 300);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Honeycomb cookie
+            if (assets.honeycomb && assets.honeycomb.complete) {
+                const cookieSize = 300;
+                const cookieX = centerX - cookieSize / 2;
+                const cookieY = centerY - cookieSize / 2;
+                ctx.drawImage(assets.honeycomb, cookieX, cookieY, cookieSize, cookieSize);
+                
+                // Draw the circle outline that needs to be traced
+                const radius = gameState.cookieRadius;
+                
+                // Draw main circle outline in red
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // Draw traced portions in gold
+                if (gameState.honeycombProgress.length > 1) {
+                    ctx.strokeStyle = '#ffd700';
+                    ctx.lineWidth = 5;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#ffd700';
+                    ctx.beginPath();
+                    ctx.moveTo(gameState.honeycombProgress[0].x, gameState.honeycombProgress[0].y);
+                    for (let i = 1; i < gameState.honeycombProgress.length; i++) {
+                        ctx.lineTo(gameState.honeycombProgress[i].x, gameState.honeycombProgress[i].y);
+                    }
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+                
+                // Show completed angles as golden dots
+                ctx.fillStyle = '#ffd700';
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = '#ffd700';
+                for (let angleDeg of gameState.completedAngles) {
+                    const angleRad = angleDeg * Math.PI / 180;
+                    const dotX = centerX + Math.cos(angleRad) * radius;
+                    const dotY = centerY + Math.sin(angleRad) * radius;
+                    ctx.beginPath();
+                    ctx.arc(dotX, dotY, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.shadowBlur = 0;
+                
+                // Mouse cursor with distance indicator
+                const distanceFromCenter = Math.sqrt(
+                    Math.pow(gameState.mousePos.x - centerX, 2) + 
+                    Math.pow(gameState.mousePos.y - centerY, 2)
+                );
+                const isOnTarget = Math.abs(distanceFromCenter - radius) < 8;
+                
+                ctx.fillStyle = gameState.tracingActive ? 
+                    (isOnTarget ? '#00ff00' : '#ff0000') : '#fff';
+                ctx.beginPath();
+                ctx.arc(gameState.mousePos.x, gameState.mousePos.y, 
+                    gameState.tracingActive ? 6 : 4, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Show progress percentage
+                const progress = Math.floor(gameState.traceProgress * 100);
+                ctx.font = 'bold 24px Orbitron';
+                ctx.fillStyle = progress > 85 ? '#00ff00' : '#fff';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${progress}% Complete`, centerX, centerY + 200);
+                
+                // Show strict warning
+                ctx.font = 'bold 16px Orbitron';
+                ctx.fillStyle = '#ff0000';
+                ctx.fillText('STAY ON THE EDGE OR CRACK!', centerX, centerY + 230);
+            }
+            
+            ctx.font = 'bold 36px Orbitron';
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.fillText('TRACE THE COOKIE EDGE', canvas.width / 2, 80);
+            ctx.font = 'bold 20px Orbitron';
+            ctx.fillStyle = '#ff0000';
+            ctx.fillText('Follow the EXACT circular outline - Any deviation CRACKS the cookie!', canvas.width / 2, 110);
+            ctx.font = 'bold 18px Orbitron';
+            ctx.fillStyle = '#fff';
+            ctx.fillText('This is for advanced gamers only - stay on the red circle!', canvas.width / 2, 135);
+        }
+
+        function renderGlassBridge() {
+            // Background
+            ctx.fillStyle = '#2a2a2a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Alpha banners
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 48px Orbitron';
+            ctx.textAlign = 'center';
+            ctx.fillText('ALPHA', canvas.width / 2, 80);
+            
+            // Bridge tiles - positioned higher to avoid instruction overlap
+            const tileWidth = 80;
+            const tileHeight = 60;
+            const startX = canvas.width / 2 - tileWidth;
+            const startY = 180;
+            
+                            for (let row = 0; row < 7; row++) {
+                for (let col = 0; col < 2; col++) {
+                    const x = startX + col * tileWidth;
+                    const y = startY + row * 100;
+                    
+                    // Base tile color
+                    ctx.fillStyle = '#777';
+                    ctx.fillRect(x, y, tileWidth, tileHeight);
+                    
+                    // Tile color based on safety (with very subtle reflection hint)
+                    const isSafe = gameState.safeTiles[row] === col;
+                    const time = Date.now() / 12000; // Much slower 12 second cycle
+                    const reflectionIntensity = Math.sin(time) * 0.5 + 0.5; // Smooth sine wave 0-1
+                    
+                    if (isSafe && reflectionIntensity > 0.8) { // Only show hint at very peak
+                        const opacity = (reflectionIntensity - 0.8) * 5; // Much more subtle
+                        
+                        // Very subtle shine effect
+                        ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.15})`;
+                        ctx.fillRect(x, y, tileWidth, tileHeight);
+                    }
+                    
+                    // Tile selection highlight
+                    if (gameState.selectedTile && gameState.selectedTile.row === row && gameState.selectedTile.col === col) {
+                        ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+                        ctx.fillRect(x, y, tileWidth, tileHeight);
+                        
+                        ctx.strokeStyle = '#ffff00';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(x + 2, y + 2, tileWidth - 4, tileHeight - 4);
+                    }
+                    
+                    // Tile border
+                    ctx.strokeStyle = '#333';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, tileWidth, tileHeight);
+                }
+            }
+            
+            // Player position on bridge
+            if (gameState.onBridge) {
+                const playerX = startX + gameState.bridgePosition.col * tileWidth + tileWidth/2;
+                const playerY = startY + gameState.bridgePosition.row * 100 + tileHeight/2;
+                
+                ctx.fillStyle = '#ff0000';
+                ctx.beginPath();
+                ctx.arc(playerX, playerY, 15, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.font = 'bold 16px Orbitron';
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.fillText('67', playerX, playerY + 5);
+            } else {
+                // Player at start - positioned better with player sprite
+                const playerStartX = startX + tileWidth/2;
+                const playerStartY = startY - 60;
+                
+                if (assets.player && assets.player.complete) {
+                    ctx.drawImage(assets.player, playerStartX - 30, playerStartY, 60, 80);
+                } else {
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(playerStartX - 15, playerStartY + 20, 30, 40);
+                }
+                
+                ctx.font = 'bold 20px Orbitron';
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.strokeText('67', playerStartX, playerStartY - 10);
+                ctx.fillText('67', playerStartX, playerStartY - 10);
+            }
+            
+            ctx.font = 'bold 32px Orbitron';
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.fillText('CROSS', canvas.width / 2, 130);
+            ctx.font = 'bold 18px Orbitron';
+            ctx.fillText('Some will say yes, some will say no. High stakes Rejection Therapy.', canvas.width / 2, 155);
+            
+            // Show current row progress and instructions
+            if (gameState.onBridge) {
+                ctx.font = 'bold 16px Orbitron';
+                ctx.fillStyle = '#ffff00';
+                ctx.fillText(`Row ${gameState.bridgePosition.row + 1} of 7`, canvas.width / 2, canvas.height - 70);
+                
+                if (gameState.selectedTile) {
+                    ctx.fillStyle = '#00ff00';
+                    ctx.fillText(`Selected: ${gameState.selectedTile.col === 0 ? 'LEFT' : 'RIGHT'} tile - Press SPACE to jump!`, 
+                        canvas.width / 2, canvas.height - 50);
+                } else {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText('Click on a tile in the NEXT row to select it', canvas.width / 2, canvas.height - 50);
+                }
+            } else {
+                ctx.font = 'bold 16px Orbitron';
+                ctx.fillStyle = '#fff';
+                if (gameState.selectedTile) {
+                    ctx.fillText(`Selected: ${gameState.selectedTile.col === 0 ? 'LEFT' : 'RIGHT'} tile - Press SPACE to start!`, 
+                        canvas.width / 2, canvas.height - 50);
+                } else {
+                    ctx.fillText('Click on a tile in the FIRST row to begin', canvas.width / 2, canvas.height - 50);
+                }
+            }
+        }
+
+        function renderGameOver() {
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Blackboard texture
+            ctx.fillStyle = '#2d4a22';
+            ctx.fillRect(100, 100, canvas.width - 200, canvas.height - 200);
+            
+            // Crossed out 67
+            ctx.font = 'bold 120px Orbitron';
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.fillText('67', canvas.width / 2, canvas.height / 2 - 50);
+            
+            // Red X over number
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2 - 80, canvas.height / 2 - 120);
+            ctx.lineTo(canvas.width / 2 + 80, canvas.height / 2 + 20);
+            ctx.moveTo(canvas.width / 2 + 80, canvas.height / 2 - 120);
+            ctx.lineTo(canvas.width / 2 - 80, canvas.height / 2 + 20);
+            ctx.stroke();
+            
+            ctx.font = 'bold 64px Orbitron';
+            ctx.fillStyle = '#ff0000';
+            ctx.fillText('ELIMINATED', canvas.width / 2, canvas.height / 2 + 100);
+        }
+
+        function renderWin() {
+            ctx.fillStyle = '#0a2a0a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Spotlight on money
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 300);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Money pile
+            ctx.fillStyle = '#00ff00';
+            for (let i = 0; i < 20; i++) {
+                const x = centerX - 100 + Math.random() * 200;
+                const y = centerY - 50 + Math.random() * 100;
+                ctx.fillRect(x, y, 30, 15);
+            }
+            
+            // Diploma on top
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(centerX - 60, centerY - 80, 120, 80);
+            ctx.fillStyle = '#ffd700';
+            ctx.font = 'bold 16px Orbitron';
+            ctx.textAlign = 'center';
+            ctx.fillText('ALPHA DIPLOMA', centerX, centerY - 50);
+            ctx.fillText('Student #67', centerX, centerY - 30);
+            
+            ctx.font = 'bold 48px Orbitron';
+            ctx.fillStyle = '#00ff00';
+            ctx.fillText('YOU SURVIVED', canvas.width / 2, 200);
+            
+            ctx.font = 'bold 32px Orbitron';
+            ctx.fillText('Prize: $67,670,000', canvas.width / 2, 300);
+            
+            ctx.font = 'bold 24px Orbitron';
+            ctx.fillStyle = '#fff';
+            ctx.fillText('Thank you for your participation, Contestant 67.', canvas.width / 2, 650);
+        }
+
+        // Input Handling
+        function handleKeyDown(e) {
+            gameState.keys[e.key.toLowerCase()] = true;
+            
+            // Scene-specific key handling
+            if (currentScene === 'mainMenu') {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    playMenuBeep();
+                    showScene('intro');
+                }
+            } else if (currentScene === 'intro') {
+                if (gameState.introStage === 2) { // Only allow progression when all text is shown
+                    showScene('redLightGreenLight');
+                }
+            } else if (currentScene === 'redLightGreenLight') {
+                handleRedLightMovement(e.key);
+            } else if (currentScene === 'glassBridge') {
+                handleBridgeMovement(e.key);
+            } else if (currentScene === 'gameOver') {
+                showScene('intro'); // Restart from intro
+            } else if (currentScene === 'win') {
+            showScene('mainMenu');
+            }
+        }
+
+        function handleKeyUp(e) {
+            gameState.keys[e.key.toLowerCase()] = false;
+            if (currentScene === 'redLightGreenLight') {
+                gameState.isMoving = false;
+            }
+        }
+
+        function handleRedLightMovement(key) {
+            let moved = false;
+            const finishLineX = canvas.width - 200; // Same as in render
+            
+            // Calculate current movement speed with exponential slowdown
+            const currentScale = gameState.playerPosition.scale || 1.0;
+            const baseSpeed = 8;
+            const currentSpeed = baseSpeed * currentScale; // Slower as you get smaller/further
+            
+            switch(key.toLowerCase()) {
+                case 'd':
+                case 'arrowright':
+                    // Move RIGHT toward Chloe (main movement direction)
+                    if (gameState.playerPosition.x < finishLineX - 60) {
+                        gameState.playerPosition.x += currentSpeed;
+                        moved = true;
+                    }
+                    break;
+                case 'a':
+                case 'arrowleft':
+                    // Move LEFT (back toward start)
+                    if (gameState.playerPosition.x > 120) {
+                        gameState.playerPosition.x -= currentSpeed;
+                        moved = true;
+                    }
+                    break;
+                case 'w':
+                case 'arrowup':
+                    // Move UP within classroom bounds
+                    if (gameState.playerPosition.y > 180) {
+                        gameState.playerPosition.y -= currentSpeed * 0.5; // Slower vertical movement
+                        moved = true;
+                    }
+                    break;
+                case 's':
+                case 'arrowdown':
+                    // Move DOWN within classroom bounds
+                    if (gameState.playerPosition.y < canvas.height - 180) {
+                        gameState.playerPosition.y += currentSpeed * 0.5; // Slower vertical movement
+                        moved = true;
+                    }
+                    break;
+            }
+
+            if (moved) {
+                gameState.isMoving = true;
+                
+                // Check if reached finish line (horizontal distance)
+                if (gameState.playerPosition.x >= finishLineX - 60) {
+                    clearInterval(gameState.timerInterval);
+                    clearInterval(gameState.lightInterval);
+                    setTimeout(() => showScene('honeycomb'), 1000);
+                }
+            }
+        }
+
+        function handleBridgeMovement(key) {
+            if (!gameState.onBridge) {
+                if (key === ' ' && gameState.selectedTile) {
+                    // Step onto selected tile
+                    gameState.onBridge = true;
+                    gameState.bridgePosition = { 
+                        row: gameState.selectedTile.row, 
+                        col: gameState.selectedTile.col 
+                    };
+                    gameState.selectedTile = null; // Clear selection
+                    checkTileBreak();
+                }
+                    return;
+                }
+
+            // On bridge - can only jump forward with space
+            if (key === ' ' && gameState.selectedTile) {
+                const currentRow = gameState.bridgePosition.row;
+                const targetRow = gameState.selectedTile.row;
+                const targetCol = gameState.selectedTile.col;
+                
+                // Can only move to next row
+                if (targetRow === currentRow + 1) {
+                    gameState.bridgePosition = { row: targetRow, col: targetCol };
+                    gameState.selectedTile = null; // Clear selection
+                    
+                    if (targetRow >= 6) {
+                        // Reached the end!
+                        clearInterval(gameState.timerInterval);
+                        setTimeout(() => winGame(), 1000);
+                    } else {
+                        checkTileBreak();
+                    }
+                }
+            }
+        }
+
+        function checkTileBreak() {
+            const { row, col } = gameState.bridgePosition;
+            const isSafe = gameState.safeTiles[row] === col;
+            
+            if (!isSafe) {
+                playGlassBreak();
+                gameOver('Tile broke.');
+            }
+        }
+
+        function handleMouseMove(e) {
+            const rect = canvas.getBoundingClientRect();
+            gameState.mousePos.x = e.clientX - rect.left;
+            gameState.mousePos.y = e.clientY - rect.top;
+            
+            if (currentScene === 'honeycomb' && gameState.tracingActive) {
+                checkHoneycombTrace();
+            }
+        }
+
+        function handleMouseDown(e) {
+            if (currentScene === 'mainMenu') {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // Check START button (550-610)
+                if (x >= canvas.width/2 - 100 && x <= canvas.width/2 + 100) {
+                    if (y >= 550 && y <= 610) {
+                        playMenuBeep();
+                        showScene('intro');
+                    } else if (y >= 630 && y <= 690) {
+                        // QUIT button
+                        alert('Thanks for playing Alpha Games!');
+                    }
+                }
+            } else if (currentScene === 'honeycomb') {
+                gameState.tracingActive = true;
+            } else if (currentScene === 'glassBridge') {
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                
+                // Check if clicking on a tile
+                const tileWidth = 80;
+                const tileHeight = 60;
+                const startX = canvas.width / 2 - tileWidth;
+                const startY = 180;
+                
+                for (let row = 0; row < 7; row++) {
+                    for (let col = 0; col < 2; col++) {
+                        const tileX = startX + col * tileWidth;
+                        const tileY = startY + row * 100;
+                        
+                        // Check if click is within this tile
+                        if (clickX >= tileX && clickX <= tileX + tileWidth &&
+                            clickY >= tileY && clickY <= tileY + tileHeight) {
+                            
+                            // Can only select tiles in current row or next row
+                            if (!gameState.onBridge && row === 0) {
+                                // Starting - can select first row
+                                gameState.selectedTile = { row, col };
+                                playMenuBeep();
+                            } else if (gameState.onBridge && row === gameState.bridgePosition.row + 1) {
+                                // On bridge - can select next row only
+                                gameState.selectedTile = { row, col };
+                                playMenuBeep();
+                            }
+                    return;
+                        }
+                    }
+                }
+            }
+        }
+
+        function handleMouseUp(e) {
+            if (currentScene === 'honeycomb') {
+                gameState.tracingActive = false;
+            }
+        }
+
+        function checkHoneycombTrace() {
+            const mouseX = gameState.mousePos.x;
+            const mouseY = gameState.mousePos.y;
+            
+            const centerX = gameState.cookieCenter.x;
+            const centerY = gameState.cookieCenter.y;
+            const radius = gameState.cookieRadius;
+            
+            // Calculate distance from mouse to center
+            const distanceFromCenter = Math.sqrt(
+                Math.pow(mouseX - centerX, 2) + 
+                Math.pow(mouseY - centerY, 2)
+            );
+            
+            // Calculate current angle
+            const angle = Math.atan2(mouseY - centerY, mouseX - centerX);
+            const normalizedAngle = (angle + Math.PI * 2) % (Math.PI * 2); // 0 to 2π
+            
+            // Check if mouse is on the circle edge (very strict tolerance)
+            const tolerance = 8; // Very tight - only 8 pixels tolerance
+            const isOnCircle = Math.abs(distanceFromCenter - radius) < tolerance;
+            
+            if (isOnCircle && gameState.tracingActive) {
+                // Mark this angle as completed
+                const angleDegrees = Math.floor(normalizedAngle * 180 / Math.PI);
+                gameState.completedAngles.add(angleDegrees);
+                
+                gameState.honeycombProgress.push({x: mouseX, y: mouseY, angle: normalizedAngle});
+                gameState.lastAngle = normalizedAngle;
+                
+                // Check completion - need to trace most of the circle
+                const completionPercent = gameState.completedAngles.size / 360;
+                gameState.traceProgress = completionPercent;
+                
+                if (completionPercent > 0.85) { // Need 85% of circle traced
+                    gameState.honeycombComplete = true;
+                    clearInterval(gameState.timerInterval);
+                    setTimeout(() => showScene('glassBridge'), 1000);
+                }
+                
+            } else if (gameState.tracingActive && gameState.tracingStarted) {
+                // Strict failure - any deviation from circle edge breaks cookie
+                if (!isOnCircle) {
+                    playCrackSound();
+                    gameOver('Shape broken. You must not be an expert.');
+                }
+            }
+            
+            // Start tracing when mouse gets close to circle edge
+            if (isOnCircle && gameState.tracingActive && !gameState.tracingStarted) {
+                gameState.tracingStarted = true;
+            }
+        }
+
+        // Event Listeners
+        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('keyup', handleKeyUp);
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('mousedown', handleMouseDown);
+        canvas.addEventListener('mouseup', handleMouseUp);
+
+        // Game Initialization
+        function initGame() {
+        showScene('mainMenu');
+            render();
+        }
+
+        // Start the game
+        loadAssets();
+    </script>
+</body>
+</html>
