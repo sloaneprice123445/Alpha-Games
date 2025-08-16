@@ -187,6 +187,7 @@
         // Asset Loading
         function loadAssets() {
             const assetList = [
+                { name: 'startscreen', src: 'sprites/chloe/player/startscreen.png' },
                 { name: 'alphacrest', src: 'sprites/chloe/player/alphacrest.png' },
                 { name: 'player', src: 'sprites/chloe/player/player.png' },
                 { name: 'evilchloebackside', src: 'sprites/chloe/player/evilChloeBackside.png' },
@@ -260,6 +261,25 @@
         // Scene Setup Functions
         function setupMainMenu() {
             gameState.moneyCounter = 0;
+            gameState.flickerTime = 0;
+            gameState.horrorAudioPlayed = false;
+            
+            // Play subtle horror ambience
+            if (!gameState.horrorAudioPlayed) {
+                // Play eerie background atmosphere
+                setTimeout(() => {
+                    initAudioContext();
+                    // Deep atmospheric rumble
+                    createBeep(30, 4.0, 'sawtooth');
+                    // Subtle high-pitched tension
+                    setTimeout(() => createBeep(800, 0.5, 'sine'), 2000);
+                    // Creepy mid-range whisper
+                    setTimeout(() => createBeep(150, 2.0, 'triangle'), 3000);
+                    // Distant electrical hum
+                    setTimeout(() => createBeep(120, 3.0, 'square'), 4500);
+                }, 1000);
+                gameState.horrorAudioPlayed = true;
+            }
         }
 
         function setupIntro() {
@@ -301,12 +321,33 @@
                     gameState.currentTextLine++;
                     // Show next line after delay (faster for empty lines, slower for text)
                     const delay = gameState.introLines[gameState.currentTextLine - 1] === "" ? 500 : 2000;
-                    setTimeout(showNextLine, delay);
+                    gameState.nextLineTimeout = setTimeout(showNextLine, delay);
                 } else {
                     gameState.introStage = 2; // Ready for interaction
                 }
             };
             showNextLine();
+        }
+
+        function advanceIntroText() {
+            // Skip to next line immediately if user clicks
+            if (gameState.currentTextLine < gameState.introLines.length) {
+                if (gameState.nextLineTimeout) {
+                    clearTimeout(gameState.nextLineTimeout);
+                }
+                gameState.visibleLines.push(gameState.introLines[gameState.currentTextLine]);
+                gameState.currentTextLine++;
+                
+                if (gameState.currentTextLine < gameState.introLines.length) {
+                    // Continue with next line immediately
+                    const delay = gameState.introLines[gameState.currentTextLine - 1] === "" ? 100 : 300;
+                    gameState.nextLineTimeout = setTimeout(() => {
+                        advanceIntroText();
+                    }, delay);
+                } else {
+                    gameState.introStage = 2; // Ready for interaction
+                }
+            }
         }
 
         function setupRedLightGreenLight() {
@@ -372,7 +413,14 @@
         }
 
         function setupGameOver() {
-            document.getElementById('instructions').textContent = 'Press any key to retry';
+            document.getElementById('instructions').textContent = 'Press any key to restart from Red Light Green Light';
+            
+            // Play death audio sequence
+            setTimeout(() => {
+                initAudioContext();
+                createBeep(100, 1.0, 'sawtooth'); // Death sound
+                setTimeout(() => createBeep(50, 2.0, 'triangle'), 500); // Fade out
+            }, 200);
         }
 
         function setupWin() {
@@ -468,46 +516,62 @@
         }
 
         function renderMainMenu() {
-            // Background
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Glitched Alpha crest
-            if (assets.alphacrest && assets.alphacrest.complete) {
-                const crestSize = 200;
-                const x = canvas.width / 2 - crestSize / 2;
-                const y = 150;
-                
-                // Glitch effect
-                ctx.save();
-                ctx.filter = 'hue-rotate(180deg) saturate(200%)';
-                ctx.drawImage(assets.alphacrest, x + Math.sin(Date.now() / 100) * 5, y, crestSize, crestSize);
-                ctx.restore();
+            // Background - use startscreen.png
+            if (assets.startscreen && assets.startscreen.complete) {
+                ctx.drawImage(assets.startscreen, 0, 0, canvas.width, canvas.height);
+            } else {
+                // Fallback dark background
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
             
-            // Title
+            // Flickering light effects
+            gameState.flickerTime += 0.02;
+            const flicker1 = Math.sin(gameState.flickerTime * 15) * 0.5 + 0.5;
+            const flicker2 = Math.sin(gameState.flickerTime * 23) * 0.3 + 0.7;
+            const flicker3 = Math.sin(gameState.flickerTime * 31) * 0.4 + 0.6;
+            
+            // Subtle flickering overlay
+            ctx.fillStyle = `rgba(255, 255, 255, ${flicker1 * 0.05})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Flickering light sources (simulated electrical issues)
+            ctx.fillStyle = `rgba(255, 200, 100, ${flicker2 * 0.1})`;
+            ctx.beginPath();
+            ctx.arc(200, 100, 80, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = `rgba(255, 200, 100, ${flicker3 * 0.08})`;
+            ctx.beginPath();
+            ctx.arc(canvas.width - 200, 150, 60, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Horror-style title with flickering
+            const titleFlicker = Math.sin(gameState.flickerTime * 8) * 0.2 + 0.8;
             ctx.font = 'bold 72px Orbitron';
-            ctx.fillStyle = '#ff0000';
+            ctx.fillStyle = `rgba(255, 0, 0, ${titleFlicker})`;
             ctx.textAlign = 'center';
-            ctx.shadowBlur = 20;
+            ctx.shadowBlur = 25;
             ctx.shadowColor = '#ff0000';
             ctx.fillText('ALPHA GAMES', canvas.width / 2, 450);
             ctx.shadowBlur = 0;
             
-            // Buttons
+            // Flickering START text
+            const startFlicker = Math.sin(gameState.flickerTime * 12) * 0.15 + 0.85;
             ctx.font = 'bold 32px Orbitron';
-            ctx.strokeStyle = '#ff0000';
+            ctx.fillStyle = `rgba(255, 255, 255, ${startFlicker})`;
+            ctx.strokeStyle = `rgba(255, 0, 0, ${startFlicker})`;
             ctx.lineWidth = 2;
             
             // START button
             const startY = 550;
             ctx.strokeRect(canvas.width / 2 - 100, startY, 200, 60);
-            ctx.fillText('START', canvas.width / 2, startY + 40);
+            ctx.fillText('PRESS ENTER TO START', canvas.width / 2, startY + 40);
             
-            // QUIT button
-            const quitY = 630;
-            ctx.strokeRect(canvas.width / 2 - 100, quitY, 200, 60);
-            ctx.fillText('QUIT', canvas.width / 2, quitY + 40);
+            // Subtle horror text
+            ctx.font = 'bold 16px Orbitron';
+            ctx.fillStyle = `rgba(150, 150, 150, ${flicker1 * 0.7})`;
+            ctx.fillText('Something is wrong here...', canvas.width / 2, canvas.height - 50);
         }
 
         function renderIntro() {
@@ -564,6 +628,14 @@
                     ctx.fillText(line, canvas.width / 2, 280 + i * 40);
                     ctx.shadowBlur = 0;
                 });
+                
+                // Show click hint if text is still appearing
+                if (gameState.introStage === 1 && gameState.currentTextLine < gameState.introLines.length) {
+                    const hintFlash = Math.sin(Date.now() / 600) * 0.3 + 0.7;
+                    ctx.font = 'bold 18px Orbitron';
+                    ctx.fillStyle = `rgba(255, 255, 0, ${hintFlash})`;
+                    ctx.fillText('Click anywhere to speed through text...', canvas.width / 2, canvas.height - 40);
+                }
             }
         }
 
@@ -997,32 +1069,62 @@
         }
 
         function renderGameOver() {
-            ctx.fillStyle = '#1a1a1a';
+            // Dark red death background
+            ctx.fillStyle = '#1a0505';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Blackboard texture
-            ctx.fillStyle = '#2d4a22';
-            ctx.fillRect(100, 100, canvas.width - 200, canvas.height - 200);
+            // Flashing red overlay
+            const flashTime = Date.now() / 300;
+            const flash = Math.sin(flashTime) * 0.2 + 0.3;
+            ctx.fillStyle = `rgba(255, 0, 0, ${flash})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Death screen elements
+            ctx.fillStyle = '#000';
+            ctx.fillRect(150, 200, canvas.width - 300, canvas.height - 400);
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(150, 200, canvas.width - 300, canvas.height - 400);
             
             // Crossed out 67
             ctx.font = 'bold 120px Orbitron';
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
-            ctx.fillText('67', canvas.width / 2, canvas.height / 2 - 50);
+            ctx.fillText('67', canvas.width / 2, canvas.height / 2 - 80);
             
-            // Red X over number
+            // Red X over number with animation
+            const xOffset = Math.sin(Date.now() / 200) * 2;
             ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = 8;
+            ctx.lineWidth = 10;
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ff0000';
             ctx.beginPath();
-            ctx.moveTo(canvas.width / 2 - 80, canvas.height / 2 - 120);
-            ctx.lineTo(canvas.width / 2 + 80, canvas.height / 2 + 20);
-            ctx.moveTo(canvas.width / 2 + 80, canvas.height / 2 - 120);
-            ctx.lineTo(canvas.width / 2 - 80, canvas.height / 2 + 20);
+            ctx.moveTo(canvas.width / 2 - 80 + xOffset, canvas.height / 2 - 140);
+            ctx.lineTo(canvas.width / 2 + 80 + xOffset, canvas.height / 2 - 20);
+            ctx.moveTo(canvas.width / 2 + 80 + xOffset, canvas.height / 2 - 140);
+            ctx.lineTo(canvas.width / 2 - 80 + xOffset, canvas.height / 2 - 20);
             ctx.stroke();
+            ctx.shadowBlur = 0;
             
-            ctx.font = 'bold 64px Orbitron';
+            // DEAD text
+            ctx.font = 'bold 72px Orbitron';
             ctx.fillStyle = '#ff0000';
-            ctx.fillText('ELIMINATED', canvas.width / 2, canvas.height / 2 + 100);
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = '#ff0000';
+            ctx.fillText('DEAD', canvas.width / 2, canvas.height / 2 + 60);
+            ctx.shadowBlur = 0;
+            
+            // Instructions
+            ctx.font = 'bold 24px Orbitron';
+            ctx.fillStyle = '#fff';
+            const instructionFlash = Math.sin(Date.now() / 500) * 0.3 + 0.7;
+            ctx.fillStyle = `rgba(255, 255, 255, ${instructionFlash})`;
+            ctx.fillText('Click or Press Any Key to Try Again', canvas.width / 2, canvas.height / 2 + 120);
+            
+            // Retry from Red Light Green Light notice
+            ctx.font = 'bold 16px Orbitron';
+            ctx.fillStyle = '#ffaa00';
+            ctx.fillText('(Restarting from Red Light Green Light)', canvas.width / 2, canvas.height / 2 + 150);
         }
 
         function renderWin() {
@@ -1078,17 +1180,19 @@
                     showScene('intro');
                 }
             } else if (currentScene === 'intro') {
-                if (gameState.introStage === 2) { // Only allow progression when all text is shown
+                if (gameState.introStage === 2) { // All text shown, ready to proceed
                     showScene('redLightGreenLight');
+                } else if (gameState.introStage === 1) { // Text is showing, speed it up
+                    advanceIntroText();
                 }
             } else if (currentScene === 'redLightGreenLight') {
                 handleRedLightMovement(e.key);
             } else if (currentScene === 'glassBridge') {
                 handleBridgeMovement(e.key);
             } else if (currentScene === 'gameOver') {
-                showScene('intro'); // Restart from intro
+                showScene('redLightGreenLight'); // Restart from Red Light Green Light
             } else if (currentScene === 'win') {
-            showScene('mainMenu');
+                showScene('mainMenu');
             }
         }
 
@@ -1218,16 +1322,21 @@
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
                 
-                // Check START button (550-610)
-                if (x >= canvas.width/2 - 100 && x <= canvas.width/2 + 100) {
-                    if (y >= 550 && y <= 610) {
-                        playMenuBeep();
-                        showScene('intro');
-                    } else if (y >= 630 && y <= 690) {
-                        // QUIT button
-                        alert('Thanks for playing Alpha Games!');
-                    }
+                // Check START area - click anywhere on the start button or press enter
+                if (x >= canvas.width/2 - 150 && x <= canvas.width/2 + 150 && y >= 520 && y <= 580) {
+                    playMenuBeep();
+                    showScene('intro');
                 }
+            } else if (currentScene === 'intro') {
+                // Click anywhere to advance intro text
+                if (gameState.introStage === 2) { // All text shown, ready to proceed
+                    showScene('redLightGreenLight');
+                } else if (gameState.introStage === 1) { // Text is showing, speed it up
+                    advanceIntroText();
+                }
+            } else if (currentScene === 'gameOver') {
+                // Click to restart from Red Light Green Light
+                showScene('redLightGreenLight');
             } else if (currentScene === 'honeycomb') {
                 gameState.tracingActive = true;
             } else if (currentScene === 'glassBridge') {
