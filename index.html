@@ -1269,13 +1269,15 @@
             gameState.honeycombComplete = false;
             // Removed darkness effect - moved to Glass Bridge
             
-            // Shell Game Box System
+            // Shell Game Box System - 4 boxes in a 2x2 grid
             gameState.boxes = [
                 {id: 0, cookie: 'evan', originalX: -75, originalY: -75, x: -75, y: -75, rotation: 0},
                 {id: 1, cookie: 'backpack', originalX: 75, originalY: -75, x: 75, y: -75, rotation: 0},
                 {id: 2, cookie: 'brain', originalX: -75, originalY: 75, x: -75, y: 75, rotation: 0},
                 {id: 3, cookie: 'circle', originalX: 75, originalY: 75, x: 75, y: 75, rotation: 0}
             ];
+            
+            console.log('Honeycomb boxes initialized:', gameState.boxes.length, 'boxes');
             
             gameState.selectedBox = null;
             gameState.selectedCookie = null;
@@ -1284,6 +1286,7 @@
             gameState.shuffleRotation = 0;
             gameState.shuffleSpeed = 0;
             gameState.swapCount = 0;
+            gameState.mousePos = null; // Initialize mouse position tracking
             
             // Simple mouse tracing - no needle cursor needed
             
@@ -1324,10 +1327,26 @@
                 const cookieAsset = assets[cookieType];
                 if (cookieAsset && cookieAsset.complete) {
                     console.log(`🍪 Extracting outline for ${cookieType}...`);
-                    gameState.cookieOutlines[cookieType] = extractOutlineFromPNG(cookieAsset);
-                    console.log(`🍪 Found ${gameState.cookieOutlines[cookieType].edgePixels.length} edge pixels for ${cookieType}`);
+                    try {
+                        gameState.cookieOutlines[cookieType] = extractOutlineFromPNG(cookieAsset);
+                        console.log(`🍪 Found ${gameState.cookieOutlines[cookieType].edgePixels.length} edge pixels for ${cookieType}`);
+                    } catch (err) {
+                        console.log(`⚠️ Error extracting outline for ${cookieType}:`, err);
+                        // Create fallback outline data
+                        gameState.cookieOutlines[cookieType] = {
+                            edgePixels: [],
+                            width: 300,
+                            height: 300
+                        };
+                    }
                 } else {
-                    console.log(`⚠️ Could not load ${cookieType} asset`);
+                    console.log(`⚠️ Could not load ${cookieType} asset - creating fallback`);
+                    // Create fallback outline data
+                    gameState.cookieOutlines[cookieType] = {
+                        edgePixels: [],
+                        width: 300,
+                        height: 300
+                    };
                 }
             });
         }
@@ -1591,6 +1610,11 @@
         }
 
         function swapRandomBoxes() {
+            if (!gameState.boxes || gameState.boxes.length < 4) {
+                console.error('Cannot swap boxes - boxes not properly initialized');
+                return;
+            }
+            
             const box1 = Math.floor(Math.random() * 4);
             let box2 = Math.floor(Math.random() * 4);
             while (box2 === box1) {
@@ -2615,24 +2639,46 @@
             ctx.textAlign = 'center';
             ctx.fillText('SHELL GAME CHALLENGE', centerX, 80);
             
+            // Check if boxes exist
+            if (!gameState.boxes || gameState.boxes.length === 0) {
+                console.error('No boxes to render in Phase 1!');
+                ctx.fillStyle = '#ff0000';
+                ctx.fillText('ERROR: Boxes not initialized!', centerX, 200);
+                return;
+            }
+            
             // Render 4 boxes in 2x2 formation
-            gameState.boxes.forEach(box => {
+            gameState.boxes.forEach((box, index) => {
                 const boxX = centerX + box.x - 50;
                 const boxY = centerY + box.y - 50;
                 
-                // Draw box
-                if (assets.box && assets.box.complete) {
-                    ctx.drawImage(assets.box, boxX, boxY, 100, 100);
-                } else {
-                    ctx.fillStyle = '#8B4513';
-                    ctx.fillRect(boxX, boxY, 100, 100);
-                }
+                // Draw box - fallback to brown rectangle if no asset
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(boxX, boxY, 100, 100);
+                ctx.strokeStyle = '#654321';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(boxX, boxY, 100, 100);
                 
-                // Draw cookie on top of box
+                // Draw box number for debugging
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText((index + 1).toString(), boxX + 50, boxY + 55);
+                
+                // Draw cookie on top of box if showing
                 if (gameState.showingCookies) {
                     const cookieAsset = assets[box.cookie];
                     if (cookieAsset && cookieAsset.complete) {
-                        ctx.drawImage(cookieAsset, boxX + 10, boxY - 40, 80, 80);
+                        ctx.drawImage(cookieAsset, boxX + 10, boxY - 60, 80, 80);
+                    } else {
+                        // Draw placeholder for cookie
+                        ctx.fillStyle = '#ffd700';
+                        ctx.beginPath();
+                        ctx.arc(boxX + 50, boxY - 20, 30, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = '#000';
+                        ctx.font = 'bold 12px Arial';
+                        ctx.fillText(box.cookie.toUpperCase(), boxX + 50, boxY - 15);
                     }
                 }
             });
@@ -2644,18 +2690,36 @@
             ctx.textAlign = 'center';
             ctx.fillText('SHAPES ENTERING BOXES', centerX, 80);
             
+            if (!gameState.boxes || gameState.boxes.length === 0) {
+                console.error('No boxes to render in Phase 2!');
+                return;
+            }
+            
             // Render boxes (cookies sliding in - simplified animation)
             gameState.boxes.forEach(box => {
                 const boxX = centerX + box.x - 50;
                 const boxY = centerY + box.y - 50;
                 
-                // Draw box
-                if (assets.box && assets.box.complete) {
-                    ctx.drawImage(assets.box, boxX, boxY, 100, 100);
-                } else {
-                    ctx.fillStyle = '#8B4513';
-                    ctx.fillRect(boxX, boxY, 100, 100);
-                }
+                // Draw box with fallback
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(boxX, boxY, 100, 100);
+                ctx.strokeStyle = '#654321';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(boxX, boxY, 100, 100);
+                
+                // Add box texture lines
+                ctx.strokeStyle = '#7a5c3a';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(boxX, boxY + 33);
+                ctx.lineTo(boxX + 100, boxY + 33);
+                ctx.moveTo(boxX, boxY + 66);
+                ctx.lineTo(boxX + 100, boxY + 66);
+                ctx.moveTo(boxX + 33, boxY);
+                ctx.lineTo(boxX + 33, boxY + 100);
+                ctx.moveTo(boxX + 66, boxY);
+                ctx.lineTo(boxX + 66, boxY + 100);
+                ctx.stroke();
             });
         }
 
@@ -2664,6 +2728,11 @@
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
             ctx.fillText('SHUFFLING...', centerX, 80);
+            
+            if (!gameState.boxes || gameState.boxes.length === 0) {
+                console.error('No boxes to render in Phase 3!');
+                return;
+            }
             
             ctx.save();
             // Rotate entire box formation
@@ -2680,13 +2749,12 @@
                 const boxX = box.x - 50;
                 const boxY = box.y - 50;
                 
-                // Draw box
-                if (assets.box && assets.box.complete) {
-                    ctx.drawImage(assets.box, boxX, boxY, 100, 100);
-                } else {
-                    ctx.fillStyle = '#8B4513';
-                    ctx.fillRect(boxX, boxY, 100, 100);
-                }
+                // Draw box with fallback
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(boxX, boxY, 100, 100);
+                ctx.strokeStyle = '#654321';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(boxX, boxY, 100, 100);
             });
             
             ctx.restore();
@@ -2697,6 +2765,11 @@
             ctx.fillStyle = '#fff';
             ctx.textAlign = 'center';
             ctx.fillText('CHOOSE YOUR FATE', centerX, 80);
+            
+            if (!gameState.boxes || gameState.boxes.length === 0) {
+                console.error('No boxes to render in Phase 4!');
+                return;
+            }
             
             // Render boxes with hover effects
             gameState.boxes.forEach((box, index) => {
@@ -4486,6 +4559,12 @@
 
         function handleMouseMove(e) {
             const rect = canvas.getBoundingClientRect();
+            
+            // Initialize mousePos if it doesn't exist
+            if (!gameState.mousePos) {
+                gameState.mousePos = { x: 0, y: 0 };
+            }
+            
             gameState.mousePos.x = e.clientX - rect.left;
             gameState.mousePos.y = e.clientY - rect.top;
             
