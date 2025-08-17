@@ -1,0 +1,17 @@
+Deployment Info
+==============
+
+Last Update: 2025-08-17
+Version: 1.5.0
+
+Changes:
+- Red Light Green Light timer: 40 seconds (was 45)
+- Added 7 more obstacle boxes on right side
+- Fixed Vercel caching issues
+
+To force cache clear on browser:
+1. Hard refresh: Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac)
+2. Or open in incognito/private browsing mode
+3. Or add ?v=1.5.0 to the URL
+
+Vercel deployment should auto-trigger from GitHub push.
