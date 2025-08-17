@@ -181,18 +181,20 @@
             tracks.forEach(track => {
                 const audio = new Audio();
                 if (audio.canPlayType('audio/mpeg')) {
-                    audio.src = track.file;
+                    // Use absolute path for Vercel deployment
+                    const path = track.file.startsWith('/') ? track.file : '/' + track.file;
+                    audio.src = path;
                     audio.loop = true;
                     audio.volume = 0.4; // Slightly higher for scene-specific music
                     
                     // Handle successful loading
                     audio.addEventListener('canplaythrough', () => {
-                        console.log(`✅ ${track.name} loaded successfully`);
+                        console.log(`✅ ${track.name} loaded successfully from ${path}`);
                     });
                     
                     // Handle loading errors gracefully
                     audio.addEventListener('error', (e) => {
-                        console.log(`❌ ${track.name} failed to load from ${track.file}`);
+                        console.log(`❌ ${track.name} failed to load from ${path}. Game will continue without music.`);
                     });
                     
                     musicTracks[track.scene] = audio;
@@ -798,6 +800,8 @@
             gameState.nextSceneAfterMoney = nextScene; // Store next scene
             gameState.fallingMoney = [];
             
+            console.log('Starting money falling, next scene:', nextScene);
+            
             // Play positive money sounds
             initAudioContext();
             // Happy cash register dings
@@ -827,6 +831,18 @@
                     drift: (Math.random() - 0.5) * 2
                 });
             }
+            
+            // CRITICAL: Force transition after 3 seconds as fallback
+            setTimeout(() => {
+                console.log('Money falling timeout - forcing transition');
+                if (gameState.isMoneyFalling && gameState.nextSceneAfterMoney) {
+                    gameState.fallingMoney = [];
+                    gameState.isMoneyFalling = false;
+                    gameState.isPaused = false;
+                    showScene(gameState.nextSceneAfterMoney);
+                    gameState.nextSceneAfterMoney = '';
+                }
+            }, 3000);
         }
 
         function updateMoneyFalling() {
@@ -859,15 +875,32 @@
         }
 
         function renderMoneyFalling() {
-            if (!gameState.isMoneyFalling || !assets.joe) return;
+            if (!gameState.isMoneyFalling) return;
             
             gameState.fallingMoney.forEach(money => {
                 ctx.save();
                 ctx.translate(money.x, money.y);
                 ctx.rotate(money.rotation);
                 ctx.globalAlpha = 0.9;
-                // Make joe.png much bigger so it's readable - 4x bigger!
-                ctx.drawImage(assets.joe, -80, -50, 160, 100); // Much bigger joe.png
+                
+                // Try to draw joe.png if it's loaded
+                if (assets.joe && assets.joe.complete) {
+                    // Make joe.png much bigger so it's readable - 4x bigger!
+                    ctx.drawImage(assets.joe, -80, -50, 160, 100); // Much bigger joe.png
+                } else {
+                    // Fallback: Draw green money rectangles if asset isn't loaded
+                    ctx.fillStyle = '#2a7f3e';
+                    ctx.fillRect(-60, -30, 120, 60);
+                    ctx.strokeStyle = '#1a5f2e';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(-60, -30, 120, 60);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 28px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('$$$', 0, 0);
+                }
+                
                 ctx.restore();
             });
         }
@@ -908,6 +941,7 @@
             assetList.forEach(asset => {
                 const img = new Image();
                 img.onload = () => {
+                    console.log(`Loaded asset: ${asset.name}`);
                     loadedCount++;
                     if (loadedCount === assetList.length) {
                         initGame();
@@ -920,13 +954,16 @@
                         initGame();
                     }
                 };
-                img.src = asset.src;
+                // Ensure paths work on Vercel (absolute paths starting with /)
+                const path = asset.src.startsWith('/') ? asset.src : '/' + asset.src;
+                img.src = path;
                 assets[asset.name] = img;
             });
         }
 
         // Scene Management
         function showScene(sceneName) {
+            console.log('Switching to scene:', sceneName, 'from:', currentScene);
             currentScene = sceneName;
             gameState.keys = {};
             
@@ -946,9 +983,15 @@
             document.getElementById('gameStatus').textContent = '';
             document.getElementById('instructions').textContent = '';
             
-            // Clear intervals
-            if (gameState.timerInterval) clearInterval(gameState.timerInterval);
-            if (gameState.lightInterval) clearInterval(gameState.lightInterval);
+            // CRITICAL: Clear ALL intervals to prevent stuck scenes
+            if (gameState.timerInterval) {
+                clearInterval(gameState.timerInterval);
+                gameState.timerInterval = null;
+            }
+            if (gameState.lightInterval) {
+                clearInterval(gameState.lightInterval);
+                gameState.lightInterval = null;
+            }
             if (gameState.redLightCheckInterval) {
                 clearInterval(gameState.redLightCheckInterval);
                 gameState.redLightCheckInterval = null;
@@ -4374,9 +4417,24 @@
                 // Check if reached finish line (horizontal distance)
                 if (gameState.playerPosition.x >= finishLineX - 60) {
                     // Player wins Red Light Green Light!
-                    clearInterval(gameState.timerInterval);
-                    clearInterval(gameState.lightInterval);
+                    console.log('Player reached finish line in Red Light Green Light!');
+                    
+                    // Clear ALL intervals to prevent stuck timers
+                    if (gameState.timerInterval) {
+                        clearInterval(gameState.timerInterval);
+                        gameState.timerInterval = null;
+                    }
+                    if (gameState.lightInterval) {
+                        clearInterval(gameState.lightInterval);
+                        gameState.lightInterval = null;
+                    }
+                    if (gameState.redLightCheckInterval) {
+                        clearInterval(gameState.redLightCheckInterval);
+                        gameState.redLightCheckInterval = null;
+                    }
+                    
                     gameState.isMoving = false; // Stop movement
+                    gameState.movementKeys.clear(); // Clear movement keys
                     
                     // Smooth transition to honeycomb with victory fanfare and money celebration
                     playVictoryFanfare();
