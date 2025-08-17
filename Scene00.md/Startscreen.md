@@ -1,6 +1,6 @@
 Scene -01: Main Menu. 
 Visuals: 
-Black background. Glitched Alpha School crest. Refer to Alphacrest.png
-UI:
-Title: “ALPHA GAMES”
-Options: [START] [QUIT]
+startscreen.png refer to for the background, but ad some subtle flickering lights and horror audios.
+
+
+when you press enter, it starts. 

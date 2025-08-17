@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Test - Delete Button</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #222;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        video {
+            width: 100%;
+            max-width: 800px;
+            height: auto;
+            border: 2px solid #fff;
+            display: block;
+            margin: 20px auto;
+        }
+        button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            font-size: 18px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .status {
+            text-align: center;
+            margin: 20px;
+            padding: 10px;
+            background: #333;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">Delete Button Video Test</h1>
+    
+    <div class="status" id="status">Click the button to test the video</div>
+    
+    <video id="testVideo" controls>
+        <source src="audio/Delete_Button.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+    
+    <button onclick="playVideo()">Play Video</button>
+    <button onclick="playVideoMuted()">Play Video (Muted)</button>
+    <button onclick="playVideoFullscreen()">Play Fullscreen</button>
+    
+    <script>
+        const video = document.getElementById('testVideo');
+        const status = document.getElementById('status');
+        
+        // Log video events
+        video.addEventListener('loadstart', () => {
+            console.log('Video load started');
+            status.textContent = 'Loading video...';
+        });
+        
+        video.addEventListener('loadeddata', () => {
+            console.log('Video data loaded');
+            status.textContent = 'Video loaded successfully! Duration: ' + video.duration + ' seconds';
+        });
+        
+        video.addEventListener('error', (e) => {
+            console.error('Video error:', e);
+            status.textContent = 'ERROR: Failed to load video - ' + (video.error ? video.error.message : 'Unknown error');
+        });
+        
+        video.addEventListener('play', () => {
+            console.log('Video playing');
+            status.textContent = 'Video is playing...';
+        });
+        
+        video.addEventListener('ended', () => {
+            console.log('Video ended');
+            status.textContent = 'Video finished playing';
+        });
+        
+        function playVideo() {
+            video.play().then(() => {
+                console.log('Video started playing');
+            }).catch(error => {
+                console.error('Failed to play:', error);
+                status.textContent = 'Failed to play: ' + error.message;
+            });
+        }
+        
+        function playVideoMuted() {
+            video.muted = true;
+            video.play().then(() => {
+                console.log('Video started playing (muted)');
+                // Try to unmute after starting
+                setTimeout(() => {
+                    video.muted = false;
+                    console.log('Attempted to unmute');
+                }, 100);
+            }).catch(error => {
+                console.error('Failed to play even muted:', error);
+                status.textContent = 'Failed to play even muted: ' + error.message;
+            });
+        }
+        
+        function playVideoFullscreen() {
+            video.play().then(() => {
+                if (video.requestFullscreen) {
+                    video.requestFullscreen();
+                } else if (video.webkitRequestFullscreen) {
+                    video.webkitRequestFullscreen();
+                }
+            }).catch(error => {
+                console.error('Failed to play:', error);
+                status.textContent = 'Failed to play: ' + error.message;
+            });
+        }
+    </script>
+</body>
+</html>

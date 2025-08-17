@@ -1,7 +1,7 @@
 Scene 01: Red Light Green Light/give feedback recieve feedback
 Purpose: Classic stop-and-go. Lose once = death.
 Visuals: 
-Background is a school hallway with lockers, reference asset: rlglscreen.png that is the entire screen. 
+Background is asset: rlglscreen.png that is the entire screen. then add a finish line on the far right, with the chloe assets beside it on the furthest right. 
 
 At the finish line stands a large, static cartoon teacher figure (Chloe) reference asset: evilchloebackside.png, facing away when green, and then turning to face forward when red, reference asset: evilchloefrontside.png but make her eyes glow red like she is scanning and play a scanning audio. 
 
