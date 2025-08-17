@@ -1193,13 +1193,13 @@
                 gameState.redLightCheckInterval = null;
             }
             
-            // FORCE TIMER TO 45 - EASIER DIFFICULTY
-            gameTimer = 45;
-            console.log('SETUP: gameTimer forced to 45 seconds:', gameTimer);
+            // FORCE TIMER TO 40 - BALANCED DIFFICULTY
+            gameTimer = 40;
+            console.log('SETUP: gameTimer forced to 40 seconds:', gameTimer);
             
-            // IMMEDIATELY SET DISPLAY TO 45
-            document.getElementById('timerDisplay').textContent = '45';
-            console.log('SETUP: timerDisplay set to 30');
+            // IMMEDIATELY SET DISPLAY TO 40
+            document.getElementById('timerDisplay').textContent = '40';
+            console.log('SETUP: timerDisplay set to 40');
             
             // Start the overall game timer for leaderboard tracking
             startLeaderboardTimer();
@@ -1235,7 +1235,7 @@
             // Play background music for Red Light Green Light scene
             playSceneMusic('redLightGreenLight');
             
-            document.getElementById('instructions').textContent = 'Cross the classroom! AVOID BOXES! Move with ARROW KEYS/WASD. When you see RED WARNING, STOP IMMEDIATELY! Chloe scans once then turns back. 45 seconds!';
+            document.getElementById('instructions').textContent = 'Cross the classroom! AVOID BOXES! Move with ARROW KEYS/WASD. When you see RED WARNING, STOP IMMEDIATELY! Chloe scans once then turns back. 40 seconds!';
         }
 
         function setupHoneycomb() {
@@ -1759,8 +1759,8 @@
                 clearInterval(gameState.timerInterval);
             }
             
-            // Force timer to 45 seconds for Red Light Green Light (easier difficulty)
-            gameTimer = 45;
+            // Force timer to 40 seconds for Red Light Green Light (balanced difficulty)
+            gameTimer = 40;
             console.log(`🕐 Starting Red Light Green Light timer: ${gameTimer} seconds`);
             document.getElementById('timerDisplay').textContent = gameTimer;
             
@@ -1979,8 +1979,18 @@
                 { x: 700, y: 300, width: 50, height: 50, speed: 0, type: 'box' },
                 { x: 700, y: 500, width: 50, height: 50, speed: 0, type: 'box' },
                 
-                // Final obstacle before finish
-                { x: 850, y: 400, width: 50, height: 50, speed: 0, type: 'box' }
+                // Row 5 - more obstacles on right side
+                { x: 850, y: 250, width: 50, height: 50, speed: 0, type: 'box' },
+                { x: 850, y: 400, width: 50, height: 50, speed: 0, type: 'box' },
+                { x: 850, y: 550, width: 50, height: 50, speed: 0, type: 'box' },
+                
+                // Row 6 - even more on the right
+                { x: 950, y: 300, width: 50, height: 50, speed: 0, type: 'box' },
+                { x: 950, y: 450, width: 50, height: 50, speed: 0, type: 'box' },
+                
+                // Final row before finish line
+                { x: 1050, y: 350, width: 50, height: 50, speed: 0, type: 'box' },
+                { x: 1050, y: 500, width: 50, height: 50, speed: 0, type: 'box' }
             ];
             gameState.obstaclesInitialized = true;
         }
